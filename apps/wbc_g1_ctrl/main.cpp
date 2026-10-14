@@ -27,6 +27,7 @@ void init_fsm_state()
 int main(int argc, char** argv)
 {
     auto vm = param::helper(argc, argv);
+    FSMState::use_keyboard = vm.count("keyboard") > 0;
 
     std::cout << " --- wbc_g1_deploy (WBC tracking) --- \n";
 
@@ -43,10 +44,15 @@ int main(int argc, char** argv)
     auto fsm = std::make_unique<CtrlFSM>(param::config["FSM"]);
     fsm->start();
 
-    std::cout << "Standing start: [L2 + D-pad Up] FixStand, then [R2 + A] WBC tracking.\n";
-    std::cout << "Floor start: [L2 + D-pad Down] floor pose, then [R2 + Y] getup + WBC.\n";
-    std::cout << "In WBC: [RT + D-pad L/R] select clip, [A] play, [D-pad down/up] liedown/getup.\n";
-    std::cout << "Press [L2 + B] for Passive.\n";
+    if (FSMState::use_keyboard) {
+        std::cout << "Keyboard: 1 Passive, 2 FixStand, 3 WBC, 4 FloorReady, 5 WBC + getup.\n";
+        std::cout << "In WBC: A plays clip, arrows select (left/right), liedown (down), or getup (up).\n";
+    } else {
+        std::cout << "Standing start: [L2 + D-pad Up] FixStand, then [R2 + A] WBC tracking.\n";
+        std::cout << "Floor start: [L2 + D-pad Down] floor pose, then [R2 + Y] getup + WBC.\n";
+        std::cout << "In WBC: [RT + D-pad L/R] select clip, [A] play, [D-pad down/up] liedown/getup.\n";
+        std::cout << "Press [L2 + B] for Passive.\n"
+
 
     while (true) {
         sleep(1);

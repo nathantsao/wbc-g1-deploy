@@ -57,6 +57,7 @@ public:
     {
         lowstate->update();
         if(keyboard) keyboard->update();
+        if(use_keyboard && keyboard) keyboard_control();
     }
 
     void post_run()
@@ -67,4 +68,49 @@ public:
     static std::unique_ptr<LowCmd_t> lowcmd;
     static std::shared_ptr<LowState_t> lowstate;
     static std::shared_ptr<Keyboard> keyboard;
+
+    inline static bool use_keyboard = false;
+
+private:
+    void keyboard_control()
+    {
+        auto& joystick = lowstate->joystick;
+        joystick.LT.smooth = 1.0f;
+        joystick.RT.smooth = 1.0f;
+
+        float lt = 0.0f;
+        float rt = 0.0f;
+        int a = 0;
+        int b = 0;
+        int y = 0;
+        int up = 0;
+        int down = 0;
+        int left = 0;
+        int right = 0;
+
+        if (keyboard->on_pressed)
+        {
+            const std::string key = keyboard->key();
+            if (key == "1") { lt = 1.0f; b = 1; }
+            else if (key == "2") { lt = 1.0f; up = 1; }
+            else if (key == "3") { rt = 1.0f; a = 1; }
+            else if (key == "4") { lt = 1.0f; down = 1; }
+            else if (key == "5") { rt = 1.0f; y = 1; }
+            else if (key == "a" || key == "A") a = 1;
+            else if (key == "up") up = 1;
+            else if (key == "down") down = 1;
+            else if (key == "left") { rt = 1.0f; left = 1; }
+            else if (key == "right") { rt = 1.0f; right = 1; }
+        }
+
+        joystick.LT(lt);
+        joystick.RT(rt);
+        joystick.A(a);
+        joystick.B(b);
+        joystick.Y(y);
+        joystick.up(up);
+        joystick.down(down);
+        joystick.left(left);
+        joystick.right(right);
+    }
 };

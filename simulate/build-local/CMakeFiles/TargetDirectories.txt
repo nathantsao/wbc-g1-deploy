@@ -1,4 +1,0 @@
-/home/user/Documents/code/wbc-g1-deploy/simulate/build-local/CMakeFiles/unitree_mujoco.dir
-/home/user/Documents/code/wbc-g1-deploy/simulate/build-local/CMakeFiles/jstest.dir
-/home/user/Documents/code/wbc-g1-deploy/simulate/build-local/CMakeFiles/edit_cache.dir
-/home/user/Documents/code/wbc-g1-deploy/simulate/build-local/CMakeFiles/rebuild_cache.dir
