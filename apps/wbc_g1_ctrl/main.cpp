@@ -4,6 +4,8 @@
 #include "FSM/State_FloorReady.h"
 #include "State_WbcTracking.h"
 
+#include <cmath>
+
 std::unique_ptr<LowCmd_t> FSMState::lowcmd = nullptr;
 std::shared_ptr<LowState_t> FSMState::lowstate = nullptr;
 std::shared_ptr<Keyboard> FSMState::keyboard = std::make_shared<Keyboard>();
@@ -24,6 +26,88 @@ void init_fsm_state()
     spdlog::info("Connected to robot.");
 }
 
+void start_sequence()
+{
+    constexpr size_t policy_joint_count = 29;
+    const auto policy_observations_available = [] {
+        if (FSMState::lowstate->isTimeout()) {
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(FSMState::lowstate->mutex_);
+        const auto& imu = FSMState::lowstate->msg_.imu_state();
+        const auto& motors = FSMState::lowstate->msg_.motor_state();
+        if (imu.gyroscope().size() < 3 || imu.quaternion().size() < 4
+            || motors.size() < policy_joint_count) {
+            return false;
+        }
+
+        float quaternion_norm_squared = 0.0f;
+        for (size_t i = 0; i < 3; ++i) {
+            if (!std::isfinite(imu.gyroscope()[i])) {
+                return false;
+            }
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            const float component = imu.quaternion()[i];
+            if (!std::isfinite(component)) {
+                return false;
+            }
+            quaternion_norm_squared += component * component;
+        }
+        if (quaternion_norm_squared < 0.25f || quaternion_norm_squared > 2.25f) {
+            return false;
+        }
+
+        // Check motor encoders
+        for (size_t i = 0; i < policy_joint_count; ++i) {
+            if (!std::isfinite(motors[i].q()) || !std::isfinite(motors[i].dq())) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    spdlog::info("Waiting for valid policy observations from the robot...");
+    while (!policy_observations_available()) {
+        usleep(10'000);
+    }
+    spdlog::info("Received IMU and 29-joint policy observations.");
+
+    if (FSMState::use_keyboard) {
+        spdlog::info("Skipping joystick startup check in keyboard mode.");
+        return;
+    }
+
+    std::cout << "Startup safety: release, then press [A] on the joystick to continue.\n";
+    bool a_released = false;
+    while (true) {
+        FSMState::lowstate->update();
+        const auto& a = FSMState::lowstate->joystick.A;
+        if (!a.pressed) {
+            a_released = true;
+        } else if (a_released && a.on_pressed) {
+            break;
+        }
+        usleep(10'000);
+    }
+    std::cout << "Pressed [A] (1/2)\n";
+
+    a_released = false;
+    while (true) {
+        FSMState::lowstate->update();
+        const auto& a = FSMState::lowstate->joystick.A;
+        if (!a.pressed) {
+            a_released = true;
+        } else if (a_released && a.on_pressed) {
+            break;
+        }
+        usleep(10'000);
+    }
+    std::cout << "Pressed [A] (2/2)\n";
+    spdlog::info("Joystick startup check passed.");
+}
+
 int main(int argc, char** argv)
 {
     auto vm = param::helper(argc, argv);
@@ -41,6 +125,8 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
+    start_sequence();
+
     auto fsm = std::make_unique<CtrlFSM>(param::config["FSM"]);
     fsm->start();
 
@@ -51,7 +137,8 @@ int main(int argc, char** argv)
         std::cout << "Standing start: [L2 + D-pad Up] FixStand, then [R2 + A] WBC tracking.\n";
         std::cout << "Floor start: [L2 + D-pad Down] floor pose, then [R2 + Y] getup + WBC.\n";
         std::cout << "In WBC: [RT + D-pad L/R] select clip, [A] play, [D-pad down/up] liedown/getup.\n";
-        std::cout << "Press [L2 + B] for Passive.\n"
+        std::cout << "Press [L2 + B] for Passive.\n";
+    }
 
 
     while (true) {

@@ -56,7 +56,7 @@ On the G1 onboard PC, use `--network=eth0` and set up Ethernet / internet sharin
 | Liedown | D-pad down (when idle: select mode or after clip finishes; auto-plays) |
 | Getup | D-pad up (when down and idle; auto-plays) |
 
-Run with `--keyboard` to use the terminal instead of a gamepad: `1` Passive, `2` FixStand, `3` WBC from standing, `4` FloorReady, and `5` WBC + get-up from the floor. In WBC, `A` plays the selected clip, left/right arrows browse clips, and up/down arrows get up or lie down. When using MuJoCo without a physical gamepad, set `use_joystick: 0` in `simulate/config.yaml`; the deployment process generates the controls itself.
+At startup, release and then press the joystick's A button to verify joystick input before the FSM starts. This check is skipped with `--keyboard`.
 
 ## Dependencies
 

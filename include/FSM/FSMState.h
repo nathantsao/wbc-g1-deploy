@@ -5,6 +5,10 @@
 #include "FSM/BaseState.h"
 #include "isaaclab/devices/keyboard/keyboard.h"
 #include "unitree_joystick_dsl.hpp"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <string>
 
 class FSMState : public BaseState
 {
@@ -13,6 +17,13 @@ public:
     : BaseState(state, state_string) 
     {
         spdlog::info("Initializing State_{} ...", state_string);
+
+        registered_checks.emplace_back(
+            std::make_pair(
+                []()->bool{ return hardwareSafetyFault(); },
+                FSMStringMap.right.at("Passive")
+            )
+        );
 
         auto transitions = param::config["FSM"][state_string]["transitions"];
 
@@ -72,6 +83,76 @@ public:
     inline static bool use_keyboard = false;
 
 private:
+    static bool hardwareSafetyFault()
+    {
+        constexpr size_t kCheckedMotors = 29;
+        constexpr double kMaxJointVelocity = 35.0;
+        constexpr int16_t kHighTemperatureEnter = 90;
+        constexpr int16_t kHighTemperatureExit = 85;
+
+        if (!lowstate) {
+            return false;
+        }
+
+        bool velocity_fault = false;
+        bool motor_fault = false;
+        bool temperature_fault = false;
+        std::string fault_reason;
+        {
+            std::lock_guard<std::mutex> lock(lowstate->mutex_);
+            const auto& motors = lowstate->msg_.motor_state();
+            const size_t motor_count = std::min(kCheckedMotors, motors.size());
+
+            for (size_t i = 0; i < motor_count; ++i) {
+                const auto& motor = motors[i];
+                const double velocity = motor.dq();
+                const auto temperatures = motor.temperature();
+                const int16_t max_temperature = std::max(temperatures[0], temperatures[1]);
+                
+                // Check if joint velocity exceeds threshold
+                if (std::abs(velocity) > kMaxJointVelocity) {
+                    velocity_fault = true;
+                    if (fault_reason.empty()) {
+                        fault_reason = "motor " + std::to_string(i) + " velocity " + std::to_string(velocity) + " rad/s";
+                    }
+                }
+
+                // Check motor status for errors
+                if (motor.motorstate() != 0) {
+                    motor_fault = true;
+                    if (fault_reason.empty()) {
+                        fault_reason = "motor " + std::to_string(i) + " error code " + std::to_string(motor.motorstate());
+                    }
+                }
+                
+                // Check motor temperature
+                if (motor_high_temp_[i]) {
+                    if (max_temperature < kHighTemperatureExit) {
+                        motor_high_temp_[i] = false;
+                    }
+                } else if (max_temperature >= kHighTemperatureEnter) {
+                    motor_high_temp_[i] = true;
+                }
+                if (motor_high_temp_[i]) {
+                    temperature_fault = true;
+                    if (fault_reason.empty()) {
+                        fault_reason = "motor " + std::to_string(i) + " temperature " + std::to_string(max_temperature);
+                    }
+                }
+            }
+        }
+
+        const bool fault = velocity_fault || motor_fault || temperature_fault;
+        if (fault && !safety_fault_active_) {
+            spdlog::critical("Hardware safety fault; transitioning to Passive: {}", fault_reason);
+        }
+        safety_fault_active_ = fault;
+        return fault;
+    }
+
+    inline static std::array<bool, 29> motor_high_temp_{};
+    inline static bool safety_fault_active_ = false;
+
     void keyboard_control()
     {
         auto& joystick = lowstate->joystick;

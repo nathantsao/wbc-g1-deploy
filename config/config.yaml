@@ -1,6 +1,6 @@
 # G1 WBC tracking: one policy, many motion clips (see config/clips/).
-policy_dir: config/policy/wbc
-clips_dir: config/clips
+policy_dir: config/policy/karate
+clips_dir: config/karate_clips
 clips_manifest: manifest.yaml
 
 FSM:
@@ -27,11 +27,11 @@ FSM:
       1,1,1,1,1,1,1,
     ]
     kd: [
-      3,3,3,3,3,3,
-      3,3,3,3,3,3,
-      3,3,3,
-      3,3,3,3,3,3,3,
-      3,3,3,3,3,3,3,
+      8,8,8,8,8,8,
+      8,8,8,8,8,8,
+      8,8,8,
+      8,8,8,8,8,8,8,
+      8,8,8,8,8,8,8,
     ]
 
   FixStand:
