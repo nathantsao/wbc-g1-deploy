@@ -17,9 +17,9 @@ list(APPEND CMAKE_PREFIX_PATH
 find_package(unitree_sdk2 REQUIRED)
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
-  set(ONNXRUNTIME_DIR "${REPO_ROOT}/thirdparty/onnxruntime-linux-x64-1.22.0")
+  set(ONNXRUNTIME_DIR "${REPO_ROOT}/thirdparty/onnxruntime-linux-x64-1.30.0")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-  set(ONNXRUNTIME_DIR "${REPO_ROOT}/thirdparty/onnxruntime-linux-aarch64-1.22.0")
+  set(ONNXRUNTIME_DIR "${REPO_ROOT}/thirdparty/onnxruntime-linux-aarch64-1.30.0")
 else()
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
@@ -47,7 +47,7 @@ link_libraries(
   Boost::program_options
   yaml-cpp
   fmt
-  ${ONNXRUNTIME_DIR}/lib/libonnxruntime.so.1.22.0
+  ${ONNXRUNTIME_DIR}/lib/libonnxruntime.so.1.30.0
   cnpy_lib
   ZLIB::ZLIB
 )
@@ -61,6 +61,7 @@ set(WBC_LIB_SRC
   ${REPO_ROOT}/src/motion_reference_obs.cpp
   ${REPO_ROOT}/src/wbc_tracking_params.cpp
   ${REPO_ROOT}/src/pd_torque_clip.cpp
+  ${REPO_ROOT}/src/State_RLBase.cpp
 )
 
 add_library(${PROJECT_NAME}_lib ${WBC_LIB_SRC})

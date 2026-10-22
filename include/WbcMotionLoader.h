@@ -16,6 +16,7 @@ public:
     float step_dt);
 
   void update(float time);
+  void holdFinalPose();
   void reset(const isaaclab::ArticulationData& data, float t = 0.0f);
 
   Eigen::Vector3f anchor_pos_w() const;
@@ -36,6 +37,7 @@ public:
   int frame;
 
 private:
+  bool holding_final_pose_ = false;
   int anchor_body_index_ = 0;
   std::vector<Eigen::Vector3f> anchor_positions_;
   std::vector<Eigen::Quaternionf> anchor_quaternions_;

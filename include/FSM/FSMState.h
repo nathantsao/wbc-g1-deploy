@@ -177,6 +177,7 @@ private:
             else if (key == "3") { rt = 1.0f; a = 1; }
             else if (key == "4") { lt = 1.0f; down = 1; }
             else if (key == "5") { rt = 1.0f; y = 1; }
+            else if (key == "6") { rt = 1.0f; b = 1; }
             else if (key == "a" || key == "A") a = 1;
             else if (key == "up") up = 1;
             else if (key == "down") down = 1;

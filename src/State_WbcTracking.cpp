@@ -2,6 +2,7 @@
 
 #include "MotionClipLibrary.h"
 #include "joystick_expr.h"
+#include "motion_npz.h"
 #include "pd_torque_clip.h"
 #include "unitree_articulation.h"
 #include "wbc_entry_mode.h"
@@ -20,8 +21,9 @@ State_WbcTracking::~State_WbcTracking()
   exit();
 }
 
-State_WbcTracking::State_WbcTracking(int state_mode, std::string state_string)
-: FSMState(state_mode, state_string)
+State_WbcTracking::State_WbcTracking(
+  int state_mode, std::string state_string, bool ready_mode)
+: FSMState(state_mode, state_string), ready_mode_(ready_mode)
 {
   wbc_deploy::ensure_mdp_registered();
 
@@ -58,6 +60,13 @@ State_WbcTracking::State_WbcTracking(int state_mode, std::string state_string)
   clip_library_ = std::make_unique<MotionClipLibrary>(
     clips_dir, manifest, step_dt, anchor_body, pose_clips);
   motion = clip_library_->loader();
+  if (ready_mode_) {
+    // TODO: allow to set pose clip via config file
+    const auto pose_path = resolve_clip_path(
+      clips_dir, cfg["pose_clip"].as<std::string>("getup_01_original"));
+    ready_motion_ = std::make_shared<WbcMotionLoader>(pose_path.string(), anchor_body, step_dt);
+    ready_motion_->holdFinalPose();
+  }
 
   auto articulation = std::make_shared<unitree::BaseArticulation<LowState_t::SharedPtr>>(
     FSMState::lowstate);
@@ -79,6 +88,11 @@ State_WbcTracking::State_WbcTracking(int state_mode, std::string state_string)
 
   pd_torque_clip_ = wbc_deploy::load_pd_torque_clip_config(
     cfg, env->robot->data.joint_ids_map.size());
+  if (ready_mode_
+      && ready_motion_->joint_pos().size()
+        != static_cast<int>(env->robot->data.joint_ids_map.size())) {
+    throw std::runtime_error(state_string + ": ready pose joint count does not match policy");
+  }
 
   time_range_[0] = cfg["time_start"] ? cfg["time_start"].as<float>() : 0.0f;
   syncPlaybackEndToMotion();
@@ -152,6 +166,15 @@ void State_WbcTracking::handleClipSwitch()
   }
 
   const auto& joy = FSMState::lowstate->joystick;
+  if (ready_mode_) {
+    if (clip_next_fn_ && clip_next_fn_(joy)) {
+      clip_library_->browseNextSelected();
+    } else if (clip_prev_fn_ && clip_prev_fn_(joy)) {
+      clip_library_->browsePrevSelected();
+    }
+    wbc_deploy::pendingWbcClipName() = clip_library_->selectedBrowsableName();
+    return;
+  }
 
   was_playback_finished_ = playback_finished_;
   playback_finished_ = isPlaybackFinished();
@@ -219,7 +242,26 @@ void State_WbcTracking::enter()
   }
 
   motion = clip_library_->loader();
-  if (wbc_deploy::pendingWbcEntryMode() == wbc_deploy::WbcEntryMode::FromFloor) {
+  const auto entry_mode = wbc_deploy::pendingWbcEntryMode();
+
+  if (ready_mode_) {
+    const auto& pending_name = wbc_deploy::pendingWbcClipName();
+    if (!pending_name.empty()
+        && !clip_library_->selectBrowsableByName(pending_name)) {
+      throw std::runtime_error("WbcReady cannot find selected clip: " + pending_name);
+    }
+    motion = ready_motion_;
+    robot_is_up_ = true;
+    pauseClipPlayback(motion->duration);
+    awaiting_clip_select_ = true;
+    playback_finished_ = false;
+    was_playback_finished_ = false;
+    wbc_deploy::pendingWbcClipName() = clip_library_->selectedBrowsableName();
+    wbc_deploy::pendingWbcEntryMode() = wbc_deploy::WbcEntryMode::SelectedClip;
+    spdlog::info(
+      "WbcReady running WBC policy with frozen final pose; selected clip: {}",
+      clip_library_->selectedBrowsableName());
+  } else if (entry_mode == wbc_deploy::WbcEntryMode::FromFloor) {
     if (!clip_library_->selectPoseClip("getup")) {
       spdlog::error("Failed to load getup pose clip on WBC entry");
     } else {
@@ -230,6 +272,23 @@ void State_WbcTracking::enter()
     clip_playback_active_ = true;
     wbc_deploy::pendingWbcEntryMode() = wbc_deploy::WbcEntryMode::Standing;
     spdlog::info("WBC tracking started from floor — playing getup");
+  } else if (entry_mode == wbc_deploy::WbcEntryMode::SelectedClip) {
+    const auto& clip_name = wbc_deploy::pendingWbcClipName();
+    if (!clip_name.empty()
+        && clip_library_->selectBrowsableByName(clip_name)
+        && clip_library_->activateSelectedBrowsable()) {
+      motion = clip_library_->loader();
+      robot_is_up_ = true;
+      beginClipPlayback();
+      spdlog::info("WBC tracking started — playing selected clip: {}", clip_name);
+    } else {
+      spdlog::error(
+        "WBC tracking could not load selected clip '{}'; entering clip selection mode",
+        clip_name);
+      robot_is_up_ = true;
+      enterClipSelectMode(0.0f);
+    }
+    wbc_deploy::pendingWbcEntryMode() = wbc_deploy::WbcEntryMode::Standing;
   } else {
     robot_is_up_ = true;
     enterClipSelectMode(0.0f);
@@ -244,6 +303,11 @@ void State_WbcTracking::enter()
     was_playback_finished_ = false;
   }
   env->reset();
+
+  if (ready_mode_) {
+    env->step();
+  }
+  
   policy_thread_running = true;
   policy_thread = std::thread([this] {
     using clock = std::chrono::high_resolution_clock;
@@ -253,7 +317,7 @@ void State_WbcTracking::enter()
     auto sleep_till = clock::now() + dt;
     {
       std::lock_guard<std::mutex> lock(tracking_mtx_);
-      clip_library_->resetPlayback(env->robot->data, currentPlaybackTime());
+      motion->reset(env->robot->data, currentPlaybackTime());
     }
 
     while (policy_thread_running) {

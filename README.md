@@ -30,7 +30,27 @@ See [wbc-mjlab docs](https://wbc-mjlab.github.io/wbc-mjlab/) for datasets, motio
 
 **From floor:** Passive → FloorReady (L2 + D-pad Down) → WBC + getup (R2 + Y)
 
+**From Velocity:** Velocity (R2 + A) → WbcReady (select a clip with RT + D-pad left/right) → WBC tracking (R2 + Y, starts the selected clip)
+
+`Wbc_Ready` continuously runs the WBC/karate policy using the final frame of
+`pose_clip: getup_01_original` as a frozen reference. Joint positions, torso height,
+and gravity direction come from that frame; reference velocities are zero.
+It uses the policy's motor gains and PD torque clipping, not the former joint-PD
+interpolation. Browsing clips only changes the next clip to play, not the held
+reference. Verify balance in simulation before using this on hardware.
+
+
 ## Build and run
+
+### Simulation
+
+```bash
+cd simulate
+mkdir build && cd build && cmake .. && make -j
+./simulate/build/unitree_mujoco
+```
+
+### Controller
 
 ```bash
 scripts/bootstrap_thirdparty.sh
@@ -44,19 +64,37 @@ On the G1 onboard PC, use `--network=eth0` and set up Ethernet / internet sharin
 
 ## Joystick
 
-| Action | Buttons |
-|--------|---------|
-| FixStand (standing) | L2 + D-pad Up |
-| Floor pose (getup frame 0) | L2 + D-pad Down |
-| WBC tracking (standing) | R2 + A (from FixStand) |
-| WBC + getup (from floor) | R2 + Y (from FloorReady) |
-| Passive | L2 + B |
-| Select clip | RT + D-pad right / left (standing only) |
-| Play selected clip | A |
-| Liedown | D-pad down (when idle: select mode or after clip finishes; auto-plays) |
-| Getup | D-pad up (when down and idle; auto-plays) |
+| Action | Joystick | Keyboard (Sim-Only) |
+|--------|---------|---------------------|
+| FixStand (standing) | L2 + D-pad Up | 2 |
+| Floor pose (getup frame 0) | L2 + D-pad Down | 4 |
+| WBC tracking (standing) | R2 + A (from FixStand) | 3 |
+| WBC + getup (from floor) | R2 + Y (from FloorReady) | 5 |
+| WbcReady (stable get-up end pose) | R2 + A (from Velocity) | 3 |
+| WBC tracking (play selected clip) | R2 + Y (from WbcReady) | 5 |
+| Passive | L2 + B | 1 |
+| Velocity | R2 + B | 6 |
+| Forward / backward (Velocity mode) | Left stick up / down | `w` / `s` |
+| Strafe left / right (Velocity mode) | Left stick left / right | `a` / `d` |
+| Turn left / right (Velocity mode) | Right stick left / right | `q` / `e` |
+| Select clip | RT + D-pad right / left (WbcReady or idle WBC) | Right / Left |
+| Play selected clip | A (idle WBC only; WbcReady starts it on transition) | A |
+| Liedown | D-pad down (when idle: select mode or after clip finishes; auto-plays) | Down |
+| Getup | D-pad up (when down and idle; auto-plays) | Up |
 
 At startup, release and then press the joystick's A button to verify joystick input before the FSM starts. This check is skipped with `--keyboard`.
+
+In Velocity mode, the left stick controls forward/backward and lateral velocity;
+the right stick's horizontal axis controls yaw. With `--keyboard`, use W/S for
+forward/backward, A/D for left/right, and Q/E for left/right yaw (lowercase keys).
+Both input modes use the `velocity_commands` observation and the limits in
+`config/policy/velocity/params/config.yaml` under `commands.base_velocity.ranges`.
+Neutral sticks or no movement key command zero velocity.
+
+The velocity policy also receives `gait_phase`: sine/cosine of a clock with the
+configured `period` (0.6 seconds). Following Unitree's deployment convention,
+both values are zero when the velocity-command norm is below 0.1; the clock
+continues advancing while stationary and resets when the policy environment resets.
 
 ## Dependencies
 
@@ -70,7 +108,7 @@ Ubuntu packages (typical dev machine):
 sudo apt install -y \
   cmake g++ build-essential \
   libyaml-cpp-dev libboost-all-dev libeigen3-dev \
-  libspdlog-dev libfmt-dev zlib1g-dev
+  libspdlog-dev libfmt-dev zlib1g-dev libglfw3-dev
 ```
 
 If unitree_sdk2 is installed to a user prefix:

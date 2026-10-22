@@ -139,6 +139,17 @@ bool MotionClipLibrary::browsePrevSelected()
   return true;
 }
 
+bool MotionClipLibrary::selectBrowsableByName(const std::string& name)
+{
+  for (size_t i = 0; i < clips_.size(); ++i) {
+    if (clips_[i].name == name) {
+      selected_browsable_index_ = static_cast<int>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
 bool MotionClipLibrary::activateSelectedBrowsable()
 {
   return loadClipAt(selected_browsable_index_);

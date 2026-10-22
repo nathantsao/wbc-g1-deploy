@@ -1,10 +1,12 @@
-# CPU policy benchmark
+# Policy inference benchmark
 
-This standalone C++ harness benchmarks the active ONNX policy using either the repository's `isaaclab::OrtRunner::act()` implementation or OpenVINO Runtime compiled for `CPU`. Both backends use the same deterministic synthetic input tensors, warm-up count, and metric collection. ONNX Runtime uses the same `ORT_ENABLE_EXTENDED` graph optimization setting as `OrtRunner` and its default CPU provider.
+This standalone C++ harness benchmarks the active ONNX policy using ONNX Runtime, direct OpenVINO Runtime, or the ONNX Runtime OpenVINO Execution Provider (EP) plugin. CPU is the default device. OpenVINO supports explicit CPU, Intel GPU, and Intel NPU selection; native ONNX Runtime also supports NVIDIA GPUs through its CUDA provider. All backends use the same deterministic synthetic input tensors, warm-up count, and metric collection. ONNX Runtime uses the same `ORT_ENABLE_EXTENDED` graph optimization setting as `OrtRunner`.
 
-Building both backends requires the OpenVINO C++ development package with the ONNX frontend and CPU plugin, plus the repository's bundled ONNX Runtime. Each measured call includes one input-map copy and the selected backend's tensor setup, inference, and output handling. Backend thread pools and optimizations remain at their respective defaults, so this is an out-of-box CPU comparison, not a thread-count-normalized comparison.
+Building requires the OpenVINO C++ development package with the ONNX frontend and desired device plugins, plus ONNX Runtime. Set `OpenVINO_DIR` to the package's CMake directory if it is not found automatically. The `openvino-ep` mode additionally requires the separately built or packaged `onnxruntime-ep-openvino` shared library. The bundled ONNX Runtime is 1.30.0; the plugin API requires ONNX Runtime 1.23.0 or newer. The current upstream OpenVINO EP plugin build requires ONNX Runtime 1.30.0+ and OpenVINO 2026.4+. Intel GPU/NPU modes also require the corresponding hardware drivers.
 
-The benchmark discovers model input names and static shapes, then supplies deterministic synthetic values. It measures `OrtRunner::act()` end to end, including its per-call tensor construction, ONNX Runtime `Session::Run`, output copy, and return value. Observation generation, reference-clip loading, robot I/O, and the FSM are not included. This isolates policy inference and its wrapper overhead; it is not a full controller or hardware-in-the-loop timing test.
+Each measured call includes one input-map copy and the selected backend's tensor setup, inference, and output handling. Backend thread pools and optimizations remain at their respective defaults, so this is an out-of-box runtime/device comparison, not a thread-count-normalized comparison.
+
+The benchmark discovers model input names and static shapes, then supplies deterministic synthetic values. Inputs and the first output must be float32; the first output must be rank 2 with a static action dimension. Use single-action-row policies (output `[1, action_dimension]`) for comparable output handling: the existing `OrtRunner` copies one action row, whereas other backends copy the complete first output tensor. The ONNX CPU path still uses `OrtRunner::act()` unchanged. Each backend is measured synchronously end to end, including per-call tensor construction, inference, any required host/device transfers, output copy, and return value. Observation generation, reference-clip loading, robot I/O, and the FSM are not included. This isolates policy inference and its wrapper overhead; it is not a full controller or hardware-in-the-loop timing test.
 
 Build and run from the repository root:
 
@@ -15,12 +17,87 @@ cmake --build build/benchmark -j
 ./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino
 ```
 
-The default model is `config/policy/karate/params/policy.onnx`, matching the current root `config/config.yaml`. Options:
+The executable retains its original name for compatibility, including accelerator runs.
+
+## Device selection
+
+```bash
+# Discover devices without opening a model
+./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino --list-devices
+./build/benchmark/onnx_policy_cpu_benchmark --runtime onnx --list-devices
+
+# Direct OpenVINO on Intel GPU or NPU
+./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino --device GPU
+./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino --device GPU.1
+./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino --device NPU
+```
+
+Device names are case-insensitive. OpenVINO accepts `CPU`, `GPU`, `GPU.N`, and `NPU`; `GPU` and `GPU.0` both select the first GPU, including when discovery exposes only one of those aliases. `AUTO`, `MULTI`, and heterogeneous execution are intentionally unsupported. Unavailable or ambiguous devices fail explicitly, never silently switching to CPU.
+
+To build against a different ONNX Runtime package, pass its package root when configuring:
+
+```bash
+cmake -S benchmark -B build/benchmark \
+  -DONNXRUNTIME_DIR=/path/to/onnxruntime
+cmake --build build/benchmark -j
+```
+
+Native ONNX Runtime GPU execution requires a **CUDA-enabled** ONNX Runtime package plus compatible CUDA/cuDNN; the bundled CPU package does not provide CUDA:
 
 ```bash
 ./build/benchmark/onnx_policy_cpu_benchmark \
-  --runtime openvino --warmup 500 --iterations 20000 \
+  --runtime onnx --provider cuda --device GPU --device-id 0
+./build/benchmark/onnx_policy_cpu_benchmark \
+  --runtime onnx --provider cuda --device GPU --list-devices
+```
+
+`--provider` is only valid for `onnx` (`cpu` or `cuda`, default `cpu`), and `--device-id` is only valid for CUDA. CUDA listing verifies that the provider is present, not that a particular GPU or driver is usable: ORT does not expose portable CUDA hardware enumeration through this path. Session creation validates the chosen index and dependencies. For Intel GPU/NPU execution through ONNX Runtime, use `openvino-ep` instead.
+
+Build or install the plugin following [onnxruntime-ep-openvino](https://github.com/onnxruntime/onnxruntime-ep-openvino), then pass the plugin shared-library path:
+
+```bash
+./build/benchmark/onnx_policy_cpu_benchmark \
+  --runtime openvino-ep \
+  --device GPU \
+  --provider-library /path/to/libonnxruntime_providers_openvino_plugin.so
+```
+
+Use the same command with `--list-devices` to enumerate the plugin's devices without loading the model. The EP selects exactly one enumerated device matching `--device`. Accelerator sessions (CUDA and non-CPU OpenVINO EP) disable ORT CPU-node fallback; models that cannot be fully assigned without CPU fallback fail rather than produce a misleading accelerator result. CPU EP mode retains its existing fallback behavior.
+
+The compiled default model is `config/policy/karate/params/policy.onnx`; it does not follow later controller configuration changes automatically. Options:
+
+```bash
+./build/benchmark/onnx_policy_cpu_benchmark \
+  --runtime openvino-ep \
+  --provider-library /path/to/libonnxruntime_providers_openvino_plugin.so \
+  --warmup 500 --iterations 20000 \
   --csv benchmark/latency.csv
 ```
 
-Use `--model PATH` to benchmark a different exported policy. Reported metrics include initialization and warm-up time, min/mean/standard deviation and p50/p90/p95/p99/max inference latency, throughput, process CPU utilization, resident-memory delta, and the percentage of calls exceeding the deployment policy period of 20 ms. Initialization includes creating the selected runtime session; for OpenVINO it also includes ONNX import and CPU compilation. Runtime thread settings are left at each backend's default, so the comparison reflects their out-of-box CPU behavior rather than equalized thread pools.
+Use `--model PATH` to benchmark a different exported policy. Reported metrics include initialization and warm-up time, min/mean/standard deviation and p50/p90/p95/p99/max inference latency, throughput, process CPU utilization, resident-memory delta, and the percentage of calls exceeding the deployment policy period of 20 ms. Initialization includes creating the selected backend and resolving its device; for direct OpenVINO it also includes ONNX import and device compilation. Model inspection and synthetic-input generation remain outside initialization timing.
+
+Reports include `requested_device`, resolved `device`, `device_name`, and `execution_provider`. For CUDA and the OpenVINO EP, `device_name` is a device identifier rather than a hardware marketing name. CPU runs retain `benchmark=policy_cpu`; accelerator runs use `benchmark=policy_inference`. Existing latency keys and the CSV format (`iteration,latency_us`) are unchanged. CPU utilization and RSS are **host-process** metrics, not accelerator utilization or device memory; reports mark this with `resource_metrics_scope=host_process`. Runtime thread settings and precision remain at each backend's defaults, so results are not thread-count- or precision-normalized comparisons.
+
+## Source layout and tests
+
+- `main.cpp`: CLI orchestration and top-level error handling.
+- `options.h/.cpp`: defaults, parsing, and runtime/provider/device validation.
+- `model.h/.cpp`: model metadata, shapes, and seeded synthetic observations.
+- `backends/backend.h/.cpp`: backend interface, selection, and device resolution.
+- `backends/backend_onnx.cpp`, `backends/backend_openvino.cpp`, `backends/backend_openvino_ep.cpp`: runtime implementations and discovery.
+- `backends/backend_ort.h/.cpp`: shared host-tensor/session inference for CUDA and the OpenVINO EP.
+- `benchmark.h/.cpp`: execution timing, host resource sampling, and latency statistics.
+- `report.h/.cpp`: console formatting and CSV export.
+- `tests.cpp`: hardware-independent CLI, device resolution, statistics, input generation, and reporting tests.
+
+```bash
+cmake --build build/benchmark -j
+ctest --test-dir build/benchmark --output-on-failure
+```
+
+Tests are enabled by default; configure with `-DBUILD_TESTING=OFF` to omit them. Unit tests do not require accelerator hardware or load a policy. When the default model exists, CTest also registers synthetic CPU inference tests for ONNX Runtime and OpenVINO, checking zero warm-up, one measured iteration, repeatability, and action extent. To run the same inference checks on an available OpenVINO accelerator:
+
+```bash
+./build/benchmark/policy_benchmark_tests openvino \
+  config/policy/karate/params/policy.onnx GPU
+```

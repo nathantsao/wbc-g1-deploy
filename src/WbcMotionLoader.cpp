@@ -82,9 +82,19 @@ WbcMotionLoader::WbcMotionLoader(
 
 void WbcMotionLoader::update(float time)
 {
+  if (holding_final_pose_) {
+    frame = num_frames - 1;
+    return;
+  }
   const float phase = std::clamp(time, 0.0f, duration);
   const float f = phase / dt;
   frame = std::min(static_cast<int>(std::floor(f)), num_frames - 1);
+}
+
+void WbcMotionLoader::holdFinalPose()
+{
+  holding_final_pose_ = true;
+  frame = num_frames - 1;
 }
 
 void WbcMotionLoader::reset(
@@ -107,11 +117,17 @@ Eigen::Quaternionf WbcMotionLoader::anchor_quat_w() const
 
 Eigen::Vector3f WbcMotionLoader::anchor_lin_vel_w() const
 {
+  if (holding_final_pose_) {
+    return Eigen::Vector3f::Zero();
+  }
   return anchor_lin_vels_[frame];
 }
 
 Eigen::Vector3f WbcMotionLoader::anchor_ang_vel_w() const
 {
+  if (holding_final_pose_) {
+    return Eigen::Vector3f::Zero();
+  }
   return anchor_ang_vels_[frame];
 }
 
@@ -162,6 +178,9 @@ std::vector<float> WbcMotionLoader::ref_joint_pos() const
 
 std::vector<float> WbcMotionLoader::ref_joint_vel() const
 {
+  if (holding_final_pose_) {
+    return std::vector<float>(dof_velocities_[frame].size(), 0.0f);
+  }
   const Eigen::VectorXf jv = dof_velocities_[frame];
   std::vector<float> out(jv.size());
   for (int i = 0; i < jv.size(); ++i) {

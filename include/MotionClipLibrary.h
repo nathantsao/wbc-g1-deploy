@@ -46,6 +46,7 @@ public:
 
   bool browseNextSelected();
   bool browsePrevSelected();
+  bool selectBrowsableByName(const std::string& name);
   bool activateSelectedBrowsable();
   bool selectPoseClip(const std::string& key);
 

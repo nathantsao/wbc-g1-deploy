@@ -7,6 +7,7 @@
 #include "pd_torque_clip.h"
 
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -14,7 +15,7 @@
 class State_WbcTracking : public FSMState
 {
 public:
-    State_WbcTracking(int state_mode, std::string state_string);
+    State_WbcTracking(int state_mode, std::string state_string, bool ready_mode = false);
     ~State_WbcTracking();
 
     void enter();
@@ -41,8 +42,10 @@ private:
 
     std::unique_ptr<isaaclab::ManagerBasedRLEnv> env;
     std::unique_ptr<MotionClipLibrary> clip_library_;
+    bool ready_mode_ = false;
+    std::shared_ptr<WbcMotionLoader> ready_motion_;
     std::thread policy_thread;
-    bool policy_thread_running = false;
+    std::atomic<bool> policy_thread_running{false};
     std::array<float, 2> time_range_;
 
     bool robot_is_up_ = true;

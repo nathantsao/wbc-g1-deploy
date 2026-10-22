@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ORT_VERSION="${ORT_VERSION:-1.22.0}"
+ORT_VERSION="${ORT_VERSION:-1.30.0}"
 ORT_BASE_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
 THIRDPARTY="${ROOT}/thirdparty"
 
@@ -28,19 +28,27 @@ install_ort() {
 
   if [[ -f "${dest}/include/onnxruntime_c_api.h" ]]; then
     echo "Already installed: ${name}"
-    return 0
+  else
+    local url="${ORT_BASE_URL}/${name}.tgz"
+    local tmp
+    tmp="$(mktemp -d)"
+
+    echo "Downloading ${name}..."
+    download "${url}" "${tmp}/${name}.tgz"
+    rm -rf "${dest}"
+    tar -xzf "${tmp}/${name}.tgz" -C "${THIRDPARTY}"
+    rm -rf "${tmp}"
+    echo "Installed ${name}"
   fi
 
-  local url="${ORT_BASE_URL}/${name}.tgz"
-  local tmp
-  tmp="$(mktemp -d)"
-
-  echo "Downloading ${name}..."
-  download "${url}" "${tmp}/${name}.tgz"
-  rm -rf "${dest}"
-  tar -xzf "${tmp}/${name}.tgz" -C "${THIRDPARTY}"
-  rm -rf "${tmp}"
-  echo "Installed ${name}"
+  local targets="${dest}/lib/cmake/onnxruntime/onnxruntimeTargets-release.cmake"
+  if [[ -f "${targets}" ]] \
+    && grep -q 'lib64/libonnxruntime' "${targets}" \
+    && [[ ! -e "${dest}/lib64" ]] \
+    && [[ -d "${dest}/lib" ]]; then
+    ln -s lib "${dest}/lib64"
+    echo "Added lib64 compatibility link for ${name}"
+  fi
 }
 
 for ort in onnxruntime-linux-x64-${ORT_VERSION} onnxruntime-linux-aarch64-${ORT_VERSION}; do
