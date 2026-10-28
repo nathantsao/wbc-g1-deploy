@@ -117,9 +117,11 @@ cmake --build build/benchmark -j
 ctest --test-dir build/benchmark --output-on-failure
 ```
 
-Tests are enabled by default; configure with `-DBUILD_TESTING=OFF` to omit them. Unit tests do not require accelerator hardware or load a policy. When the default model exists, CTest also registers synthetic CPU inference tests for ONNX Runtime and OpenVINO, checking zero warm-up, one measured iteration, repeatability, and action extent. To run the same inference checks on an available OpenVINO accelerator:
+Tests are enabled by default; configure with `-DBUILD_TESTING=OFF` to omit them. Unit tests do not require accelerator hardware or load a policy. When the default model exists, CTest also registers synthetic CPU inference tests for ONNX Runtime and OpenVINO, checking zero warm-up, one measured iteration, repeatability, action extent, and that `--threads 1` gives the same output. If the OpenVINO EP plugin is found under `thirdparty/onnxruntime-ep-openvino-*-install/` (or set with `-DOPENVINO_EP_LIBRARY=PATH`), CTest also runs the same checks for `openvino-ep` on CPU. To run the same inference checks on an available OpenVINO accelerator:
 
 ```bash
 ./build/benchmark/policy_benchmark_tests openvino \
   config/policy/karate/params/policy.onnx GPU
+./build/benchmark/policy_benchmark_tests openvino-ep \
+  config/policy/karate/params/policy.onnx NPU /path/to/libonnxruntime_providers_openvino_plugin.so
 ```

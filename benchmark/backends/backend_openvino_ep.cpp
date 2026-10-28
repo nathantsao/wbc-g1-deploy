@@ -1,5 +1,6 @@
 #include "backend_ort.h"
 
+#include <algorithm>
 #include <cstring>
 #include <ostream>
 #include <stdexcept>
@@ -9,12 +10,18 @@ namespace policy_benchmark {
 namespace {
 
 std::vector<Ort::ConstEpDevice> openvino_devices(Ort::Env& env, const Options& options) {
-  env.RegisterExecutionProviderLibrary(
-      "OpenVINOExecutionProvider", options.provider_library_path.c_str());
+  const auto is_openvino = [](const Ort::ConstEpDevice& device) {
+    return std::strcmp(device.EpName(), "OpenVINOExecutionProvider") == 0;
+  };
+  // ORT shares one environment per process, so a second backend must not register the plugin again.
+  const auto registered = env.GetEpDevices();
+  if (std::none_of(registered.begin(), registered.end(), is_openvino)) {
+    env.RegisterExecutionProviderLibrary(
+        "OpenVINOExecutionProvider", options.provider_library_path.c_str());
+  }
   std::vector<Ort::ConstEpDevice> devices;
   for (const auto& device : env.GetEpDevices()) {
-    if (std::strcmp(device.EpName(), "OpenVINOExecutionProvider") == 0 &&
-        device.EpMetadata().GetValue("ov_device") != nullptr) {
+    if (is_openvino(device) && device.EpMetadata().GetValue("ov_device") != nullptr) {
       devices.push_back(device);
     }
   }

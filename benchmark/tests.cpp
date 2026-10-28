@@ -189,11 +189,14 @@ void test_report_and_csv() {
 }
 
 void test_inference(const std::string& runtime, const std::string& model_path,
-                    const std::string& device) {
+                    const std::string& device, const std::string& provider_library) {
   policy_benchmark::Options options;
   options.runtime = runtime;
   options.device = device;
   options.model_path = model_path;
+  options.provider_library_path = provider_library;
+  check(runtime != "openvino-ep" || !provider_library.empty(),
+        "openvino-ep inference tests require PROVIDER_LIBRARY");
   options.warmup_iterations = 0;
   options.measured_iterations = 1;
   const auto single = policy_benchmark::run_benchmark(options);
@@ -235,12 +238,13 @@ void test_inference(const std::string& runtime, const std::string& model_path,
 
 int main(int argc, char** argv) {
   try {
-    if (argc == 3 || argc == 4) {
-      test_inference(argv[1], argv[2], argc == 4 ? argv[3] : "CPU");
+    if (argc >= 3 && argc <= 5) {
+      test_inference(argv[1], argv[2], argc >= 4 ? argv[3] : "CPU", argc == 5 ? argv[4] : "");
       std::cout << "Synthetic inference tests passed\n";
       return 0;
     }
-    check(argc == 1, "Usage: policy_benchmark_tests [RUNTIME MODEL [DEVICE]]");
+    check(argc == 1,
+          "Usage: policy_benchmark_tests [RUNTIME MODEL [DEVICE [PROVIDER_LIBRARY]]]");
     test_options();
     test_device_resolution();
     test_statistics();
