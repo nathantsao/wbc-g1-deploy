@@ -58,6 +58,11 @@ target_link_libraries(onnx_policy_cpu_benchmark PRIVATE policy_benchmark_lib)
 set_target_properties(onnx_policy_cpu_benchmark PROPERTIES
   BUILD_RPATH "${ONNXRUNTIME_DIR}/lib"
 )
+add_executable(policy_output_diff output_diff.cpp)
+target_link_libraries(policy_output_diff PRIVATE policy_benchmark_lib)
+set_target_properties(policy_output_diff PROPERTIES
+  BUILD_RPATH "${ONNXRUNTIME_DIR}/lib"
+)
 
 include(CTest)
 if(BUILD_TESTING)

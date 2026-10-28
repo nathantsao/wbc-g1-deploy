@@ -19,6 +19,24 @@ cmake --build build/benchmark -j
 
 The build type defaults to `Release`. Pass `-DCMAKE_BUILD_TYPE=...` to override it. The executable retains its original name for compatibility, including accelerator runs.
 
+To compare ONNX Runtime CPU against OpenVINO CPU/GPU/NPU (and the OpenVINO EP plugin on each device, when built) in one step:
+
+```bash
+benchmark/run_all.sh
+REPEATS=5 ITERATIONS=50000 benchmark/run_all.sh --model config/policy/wbc/params/policy.onnx
+```
+
+Each of the `REPEATS` rounds (default 3) runs every configuration once, so CPU heat and frequency changes affect all configurations equally. The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports, per-call latency CSVs, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`. A failed configuration is reported as `FAILED` without stopping the others; the script exits with an error only if every configuration fails. Set `CONFIGS` to a space-separated list of `runtime:device` pairs to run a subset (for example `CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU"` together with `--threads`). Override `BIN`, `EP_LIB`, `OUT`, `WARMUP`, or `ITERATIONS` through the environment. `OUT` must not already contain runs, so old results are never mixed into a new summary. Extra arguments are passed to every run.
+
+To check how much accelerator outputs differ from ONNX Runtime CPU (for example because GPU and NPU default to FP16), compare the actions for seeded synthetic inputs:
+
+```bash
+benchmark/compare_outputs.sh config/policy/wbc/params
+CONFIGS="openvino-ep:GPU openvino-ep:NPU" SEEDS=500 benchmark/compare_outputs.sh config/policy/karate/params
+```
+
+It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200) and the max joint target difference in radians: the action difference times the per-joint action scale from `config.yaml` (`action.scale`, or `actions.JointPositionAction.scale`). `CONFIGS` defaults to `openvino:CPU openvino:GPU openvino:NPU`. The script wraps `build/benchmark/policy_output_diff`, which can also be run directly with `--action-scale`.
+
 ## Device selection
 
 ```bash
@@ -90,6 +108,8 @@ Reports include `requested_device`, resolved `device`, `device_name`, and `execu
 - `backends/backend_ort.h/.cpp`: shared host-tensor/session inference for CUDA and the OpenVINO EP.
 - `benchmark.h/.cpp`: execution timing, host resource sampling, and latency statistics.
 - `report.h/.cpp`: console formatting and CSV export.
+- `run_all.sh`: runs every runtime/device configuration and writes a summary table.
+- `output_diff.cpp`, `compare_outputs.sh`: compare each configuration's actions with ONNX Runtime CPU.
 - `tests.cpp`: hardware-independent CLI, device resolution, statistics, input generation, and reporting tests.
 
 ```bash
