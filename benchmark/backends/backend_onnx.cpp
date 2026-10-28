@@ -51,10 +51,24 @@ public:
   }
 };
 
+// OrtRunner has no thread setting, so explicit thread counts use a plain ORT CPU session.
+class OnnxCpuThreadsBackend final : public OrtSessionBackend {
+public:
+  OnnxCpuThreadsBackend(const Options& options, const ModelInfo& model)
+      : OrtSessionBackend(model) {
+    Ort::SessionOptions session_options;
+    session_options.SetGraphOptimizationLevel(ORT_ENABLE_EXTENDED);
+    session_options.SetIntraOpNumThreads(options.threads);
+    session_ = std::make_unique<Ort::Session>(env_, options.model_path.c_str(), session_options);
+    info = {"CPU", "CPU", "ONNX Runtime CPU provider"};
+  }
+};
+
 }  // namespace
 
 std::unique_ptr<InferenceBackend> make_onnx_backend(const Options& options, const ModelInfo& model) {
   if (options.provider == "cuda") return std::make_unique<CudaBackend>(options, model);
+  if (options.threads > 0) return std::make_unique<OnnxCpuThreadsBackend>(options, model);
   return std::make_unique<OnnxRuntimeBackend>(options.model_path);
 }
 

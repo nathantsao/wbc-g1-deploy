@@ -16,6 +16,7 @@ void print_usage(const char* program) {
             << "  --device NAME        CPU, GPU, GPU.N (OpenVINO), or NPU (default: CPU)\n"
             << "  --provider NAME      ONNX provider: cpu or cuda (default: cpu)\n"
             << "  --device-id N        CUDA device index (default: 0; requires --provider cuda)\n"
+            << "  --threads N          CPU inference threads (default: runtime default; CPU only)\n"
             << "  --list-devices       List devices/providers without loading a model\n"
             << "  --model PATH         ONNX model (default: active karate policy)\n"
             << "  --provider-library PATH  OpenVINO EP plugin library (for openvino-ep)\n"
@@ -56,6 +57,7 @@ Options parse_options(int argc, char** argv) {
   Options options;
   bool provider_set = false;
   bool device_id_set = false;
+  bool threads_set = false;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
@@ -67,7 +69,8 @@ Options parse_options(int argc, char** argv) {
       continue;
     }
     if (arg != "--runtime" && arg != "--device" && arg != "--provider" &&
-        arg != "--device-id" && arg != "--model" && arg != "--provider-library" &&
+        arg != "--device-id" && arg != "--threads" && arg != "--model" &&
+        arg != "--provider-library" &&
         arg != "--warmup" && arg != "--iterations" && arg != "--seed" && arg != "--csv") {
       throw std::runtime_error("Unknown option: " + arg);
     }
@@ -89,6 +92,13 @@ Options parse_options(int argc, char** argv) {
         throw std::runtime_error("--device-id exceeds int range");
       }
       options.device_id = static_cast<int>(id);
+    } else if (arg == "--threads") {
+      threads_set = true;
+      const size_t threads = parse_count(value, arg);
+      if (threads > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error("--threads exceeds int range");
+      }
+      options.threads = static_cast<int>(threads);
     } else if (arg == "--model") {
       options.model_path = value;
     } else if (arg == "--provider-library") {
@@ -131,6 +141,12 @@ Options parse_options(int argc, char** argv) {
   }
   if (device_id_set && (options.runtime != "onnx" || options.provider != "cuda")) {
     throw std::runtime_error("--device-id is only valid with --runtime onnx --provider cuda");
+  }
+  if (threads_set && options.threads == 0) {
+    throw std::runtime_error("--threads must be greater than zero");
+  }
+  if (threads_set && options.device != "CPU") {
+    throw std::runtime_error("--threads is only valid with --device CPU");
   }
   if (options.runtime == "openvino-ep" && options.provider_library_path.empty()) {
     throw std::runtime_error("--provider-library is required when --runtime is 'openvino-ep'");

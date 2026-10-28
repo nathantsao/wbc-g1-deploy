@@ -11,8 +11,10 @@ class OpenVinoBackend final : public InferenceBackend {
 public:
   OpenVinoBackend(const Options& options, const ModelInfo& model) : inputs_(model.inputs) {
     const std::string device = resolve_device(options.device, core_.get_available_devices());
+    ov::AnyMap config;
+    if (options.threads > 0) config.insert(ov::inference_num_threads(options.threads));
     compiled_model_ = std::make_unique<ov::CompiledModel>(
-        core_.compile_model(core_.read_model(options.model_path), device));
+        core_.compile_model(core_.read_model(options.model_path), device, config));
     request_ = std::make_unique<ov::InferRequest>(compiled_model_->create_infer_request());
     const auto execution_devices = compiled_model_->get_property(ov::execution_devices);
     if (execution_devices.size() != 1) {

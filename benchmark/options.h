@@ -15,6 +15,7 @@ struct Options {
   std::string device = "CPU";
   std::string provider = "cpu";
   int device_id = 0;
+  int threads = 0;  // 0 keeps the runtime default
   std::string model_path = WBC_BENCHMARK_DEFAULT_MODEL;
   std::string provider_library_path;
   std::string csv_path;

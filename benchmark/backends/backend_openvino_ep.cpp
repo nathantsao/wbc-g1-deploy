@@ -47,7 +47,13 @@ public:
     if (resolved != "CPU") {
       session_options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
     }
-    const std::unordered_map<std::string, std::string> provider_options;
+    std::unordered_map<std::string, std::string> provider_options;
+    if (options.threads > 0) {
+      session_options.SetIntraOpNumThreads(options.threads);
+      // OpenVINO EP 1.8 ignores num_of_threads, so the thread count goes through load_config.
+      provider_options["load_config"] = "{\"CPU\":{\"INFERENCE_NUM_THREADS\":\"" +
+                                        std::to_string(options.threads) + "\"}}";
+    }
     session_options.AppendExecutionProvider_V2(env_, selected, provider_options);
     session_ = std::make_unique<Ort::Session>(env_, options.model_path.c_str(), session_options);
     info = {resolved, resolved, "ONNX Runtime OpenVINO EP plugin"};

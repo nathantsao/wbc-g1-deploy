@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 namespace policy_benchmark {
@@ -17,7 +18,8 @@ void print_report(const Options& options, const BenchmarkResult& result, std::os
       << "requested_device=" << options.device << '\n'
       << "device=" << result.backend.device << '\n'
       << "device_name=" << result.backend.device_name << '\n'
-      << "execution_provider=" << result.backend.execution_provider << '\n';
+      << "execution_provider=" << result.backend.execution_provider << '\n'
+      << "threads=" << (options.threads > 0 ? std::to_string(options.threads) : "default") << '\n';
   if (options.runtime == "onnx" || options.runtime == "openvino-ep") {
     out << "ort_graph_optimization=ORT_ENABLE_EXTENDED\n";
   }

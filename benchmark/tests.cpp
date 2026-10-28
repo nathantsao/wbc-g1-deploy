@@ -55,6 +55,14 @@ void test_options() {
                          "--provider-library", "/plugin.so", "--list-devices"});
   check(ep.device == "NPU" && ep.list_devices, "EP options not parsed");
   check(parse({"--seed", "4294967295"}).seed == 4294967295U, "Maximum seed rejected");
+  check(defaults.threads == 0, "Default threads changed");
+  check(parse({"--threads", "2"}).threads == 2, "ONNX threads not parsed");
+  check(parse({"--runtime", "openvino", "--threads", "1"}).threads == 1,
+        "OpenVINO threads not parsed");
+  expect_error([] { parse({"--threads", "0"}); }, "--threads must be greater than zero");
+  expect_error([] { parse({"--threads", "2147483648"}); }, "int range");
+  expect_error([] { parse({"--runtime", "openvino", "--device", "GPU", "--threads", "2"}); },
+               "--threads is only valid");
   expect_error([] { parse({"--iterations", "0"}); }, "greater than zero");
   for (const std::string value : {"-1", "1x", "", " 1", "+1", "18446744073709551616"}) {
     expect_error([&] { parse({"--iterations", value}); }, "Invalid value");
@@ -145,7 +153,7 @@ void test_report_and_csv() {
          "input.obs.shape=[1,2] elements=2\n", "output.shape=[1,29]\n",
          "latency_mean_us=2.000\n", "throughput_inferences_per_sec=3.000\n",
          "policy_deadline_misses=0/3 (0.000%)\n", "rss_delta_kib=2\n",
-         "resource_metrics_scope=host_process\n"}) {
+         "resource_metrics_scope=host_process\n", "threads=default\n"}) {
     check(report.str().find(expected) != std::string::npos, "Missing report field: " + expected);
   }
   options.runtime = "onnx";
@@ -210,6 +218,13 @@ void test_inference(const std::string& runtime, const std::string& model_path,
   const auto action = backend->infer(policy_benchmark::make_observations(model, options.seed));
   check(action.size() == static_cast<size_t>(model.output_shape[1]), "Wrong action extent");
   for (float value : action) check(std::isfinite(value), "Nonfinite action");
+  if (device == "CPU") {
+    options.threads = 1;
+    const auto single_thread = policy_benchmark::run_benchmark(options);
+    check(single_thread.latency_us.size() == 5 &&
+          std::abs(single_thread.output_checksum - result.output_checksum) < 1e-3,
+          "Explicit thread count changed inference output");
+  }
   if (device != "CPU") {
     check(result.backend.device.compare(0, 3, device.substr(0, 3)) == 0,
           "Accelerator request did not execute on the requested device type");
