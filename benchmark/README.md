@@ -4,6 +4,15 @@ This standalone C++ harness benchmarks the active ONNX policy using ONNX Runtime
 
 Building requires the OpenVINO C++ development package with the ONNX frontend and desired device plugins, plus ONNX Runtime. Set `OpenVINO_DIR` to the package's CMake directory if it is not found automatically. The `openvino-ep` mode additionally requires the separately built or packaged `onnxruntime-ep-openvino` shared library. The bundled ONNX Runtime is 1.30.0; the plugin API requires ONNX Runtime 1.23.0 or newer. The current upstream OpenVINO EP plugin build requires ONNX Runtime 1.30.0+ and OpenVINO 2026.4+. Intel GPU/NPU modes also require the corresponding hardware drivers.
 
+On an Intel machine, `scripts/bootstrap_thirdparty_intel.sh` installs ONNX Runtime, OpenVINO, and the OpenVINO EP plugin under `thirdparty/`.
+
+If `--runtime openvino --list-devices` shows only CPU, the GPU and NPU user-mode drivers are probably not installed. Then run the script with `--system-deps`, which needs sudo. `--system-deps` does the following:
+
+- Installs build tools such as CMake and Ninja.
+- Installs the newest GPU compute runtime and Level Zero from the `kobuk-team/intel-graphics` PPA.
+- Installs NPU driver v1.38.0, unless an NPU driver is already installed.
+- Adds you to the `render` group. Log out and back in afterward.
+
 Each measured call includes one input-map copy and the selected backend's tensor setup, inference, and output handling. Each backend keeps its default optimization settings. It also keeps its default thread pool unless `--threads N` is given (see below). So a default run is an out-of-box comparison, not a comparison with the same thread count.
 
 The benchmark discovers model input names and static shapes, then supplies deterministic synthetic values. Inputs and the first output must be float32; the first output must be rank 2 with a static action dimension. Use single-action-row policies (output `[1, action_dimension]`) for comparable output handling: the existing `OrtRunner` copies one action row, whereas other backends copy the complete first output tensor. The ONNX CPU path still uses `OrtRunner::act()` unchanged. Each backend is measured synchronously end to end, including per-call tensor construction, inference, any required host/device transfers, output copy, and return value. Observation generation, reference-clip loading, robot I/O, and the FSM are not included. This isolates policy inference and its wrapper overhead; it is not a full controller or hardware-in-the-loop timing test.

@@ -9,6 +9,8 @@
 #
 # Intel publishes the NPU driver only for some Ubuntu releases. On others, set
 # NPU_DRIVER_DISTRO to a published one, e.g. NPU_DRIVER_DISTRO=ubuntu2404.
+# --system-deps keeps an installed NPU driver. To install a specific version instead,
+# set NPU_DRIVER_TAG and NPU_DRIVER_BUILD.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,6 +20,8 @@ ONNXRUNTIME_VERSION="${ONNXRUNTIME_VERSION:-1.30.0}"
 OPENVINO_VERSION="${OPENVINO_VERSION:-2026.4.1}"
 OPENVINO_BUILD="${OPENVINO_BUILD:-22982.07f9c262b05}"
 OVEP_VERSION="${OVEP_VERSION:-1.8.1}"
+# Remember whether the user set NPU_DRIVER_TAG. If not, an installed NPU driver is kept.
+NPU_DRIVER_REQUESTED="${NPU_DRIVER_TAG:-}"
 NPU_DRIVER_TAG="${NPU_DRIVER_TAG:-v1.38.0}"
 NPU_DRIVER_BUILD="${NPU_DRIVER_BUILD:-20260910-34487311128}"
 JOBS="${JOBS:-$(nproc)}"
@@ -35,7 +39,7 @@ for arg in "$@"; do
     --system-deps) WITH_SYSTEM_DEPS=1 ;;
     --system-deps-only) WITH_SYSTEM_DEPS=1; SYSTEM_DEPS_ONLY=1 ;;
     --skip-ep) SKIP_EP=1 ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
   esac
 done
@@ -72,7 +76,7 @@ ubuntu_major() {
 }
 
 install_system_deps() {
-  local version npu_distro tmp
+  local version npu_distro tmp user installed
   version="$(ubuntu_version)"
   # Intel publishes NPU packages only for some releases (e.g. ubuntu2404, ubuntu2604).
   npu_distro="${NPU_DRIVER_DISTRO:-ubuntu${version//./}}"
@@ -87,7 +91,21 @@ install_system_deps() {
     build-essential cmake ninja-build git curl ca-certificates \
     libtbb12 libze1 libze-intel-gpu1 intel-opencl-icd clinfo
 
+  # Device ACLs only cover local desktop sessions; group membership also covers SSH.
+  user="${SUDO_USER:-$(id -un)}"
+  if ! id -nG "${user}" | grep -qw render; then
+    sudo gpasswd -a "${user}" render
+    echo "Added ${user} to the render group; log out and back in (or reboot) to apply."
+  fi
+
   # NPU driver is only published on GitHub, not in apt.
+  # Keep an installed NPU driver unless NPU_DRIVER_TAG is set.
+  # shellcheck disable=SC2016  # ${db:Status-Status} and ${Version} are dpkg-query fields
+  installed="$(dpkg-query -W -f='${db:Status-Status} ${Version}' intel-level-zero-npu 2>/dev/null || true)"
+  if [[ "${installed}" == "installed "* && -z "${NPU_DRIVER_REQUESTED}" ]]; then
+    echo "NPU driver ${installed##* } is already installed and will be kept. Set NPU_DRIVER_TAG to install a specific version."
+    return 0
+  fi
   tmp="$(mktemp -d)"
   if ! download \
     "https://github.com/intel/linux-npu-driver/releases/download/${NPU_DRIVER_TAG}/linux-npu-driver-${NPU_DRIVER_TAG}.${NPU_DRIVER_BUILD}-${npu_distro}.tar.gz" \
@@ -102,12 +120,6 @@ install_system_deps() {
     intel-driver-compiler-npu intel-fw-npu intel-level-zero-npu intel-level-zero-npu-dbgsym || true
   sudo dpkg -i "${tmp}"/*.deb
   rm -rf "${tmp}"
-
-  # Device ACLs only cover local desktop sessions; group membership also covers SSH.
-  if ! id -nG "${USER}" | grep -qw render; then
-    sudo gpasswd -a "${USER}" render
-    echo "Added ${USER} to the render group; log out and back in (or reboot) to apply."
-  fi
 }
 
 install_onnxruntime() {
@@ -189,7 +201,8 @@ install_openvino_ep() {
     echo "Using existing source: ${OVEP_SOURCE}"
   fi
 
-  if command -v ninja >/dev/null 2>&1; then
+  # Choose a generator only for a new build directory. CMake cannot change it later.
+  if [[ ! -f "${OVEP_BUILD}/CMakeCache.txt" ]] && command -v ninja >/dev/null 2>&1; then
     generator=(-G Ninja)
   fi
   # GIT_COMMIT_ID is set explicitly because the release tarball has no .git directory.
