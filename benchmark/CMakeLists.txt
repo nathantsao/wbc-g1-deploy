@@ -4,6 +4,11 @@ project(wbc_policy_cpu_benchmark LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Unoptimized wrapper code would inflate measured latency.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")

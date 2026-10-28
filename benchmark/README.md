@@ -17,7 +17,7 @@ cmake --build build/benchmark -j
 ./build/benchmark/onnx_policy_cpu_benchmark --runtime openvino
 ```
 
-The executable retains its original name for compatibility, including accelerator runs.
+The build type defaults to `Release`. Pass `-DCMAKE_BUILD_TYPE=...` to override it. The executable retains its original name for compatibility, including accelerator runs.
 
 ## Device selection
 
