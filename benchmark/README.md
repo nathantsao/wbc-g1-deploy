@@ -28,23 +28,36 @@ cmake --build build/benchmark -j
 
 The build type defaults to `Release`. Pass `-DCMAKE_BUILD_TYPE=...` to override it. The executable retains its original name for compatibility, including accelerator runs.
 
+## Run all configurations
+
 To compare ONNX Runtime CPU against OpenVINO CPU/GPU/NPU (and the OpenVINO EP plugin on each device, when built) in one step:
 
 ```bash
 benchmark/run_all.sh
-REPEATS=5 ITERATIONS=50000 benchmark/run_all.sh --model config/policy/wbc/params/policy.onnx
 ```
 
-Each of the `REPEATS` rounds (default 3) runs every configuration once, so CPU heat and frequency changes affect all configurations about equally. The configurations run in the same order in every round. The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports, per-call latency CSVs, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`. A failed configuration is reported as `FAILED` without stopping the others; the script exits with an error only if every configuration fails. Set `CONFIGS` to a space-separated list of `runtime:device` pairs to run a subset (for example `CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU"` together with `--threads`). Override `BIN`, `EP_LIB`, `OUT`, `WARMUP`, or `ITERATIONS` through the environment. `OUT` must not already contain runs, so old results are never mixed into a new summary. Extra arguments are passed to every run. The script rejects the options it sets for each configuration: `--runtime`, `--device`, `--warmup`, `--iterations`, `--csv`, `--provider-library`, and `--list-devices`.
+- The command above runs the karate policy, which is the default model. For another policy, add `--model config/policy/<name>/params/policy.onnx`, where `<name>` is `wbc` or `velocity`.
+- Each of the `REPEATS` rounds (default 3) runs every configuration once, so CPU heat and frequency changes affect all configurations about equally. The configurations run in the same order in every round.
+- The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports, per-call latency CSVs, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`.
+- A failed configuration is reported as `FAILED` without stopping the others. The script exits with an error only if every configuration fails.
+- Set `CONFIGS` to a space-separated list of `runtime:device` pairs to run a subset (for example `CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU"` together with `--threads`).
+- Override `BIN`, `EP_LIB`, `OUT`, `WARMUP`, or `ITERATIONS` through the environment. `OUT` must not already contain runs, so old results are never mixed into a new summary.
+- Extra arguments are passed to every run. The script rejects the options it sets for each configuration: `--runtime`, `--device`, `--warmup`, `--iterations`, `--csv`, `--provider-library`, and `--list-devices`.
+
+## Compare outputs
 
 To check how much accelerator outputs differ from ONNX Runtime CPU (for example because GPU and NPU default to FP16), compare the actions for seeded synthetic inputs:
 
 ```bash
-benchmark/compare_outputs.sh config/policy/wbc/params
-CONFIGS="openvino-ep:GPU openvino-ep:NPU" SEEDS=500 benchmark/compare_outputs.sh config/policy/karate/params
+benchmark/compare_outputs.sh config/policy/karate/params
 ```
 
-It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200) and the max joint target difference in radians: the action difference times the per-joint action scale from `config.yaml` (`action.scale`, or `actions.JointPositionAction.scale`). `CONFIGS` defaults to `openvino:CPU openvino:GPU openvino:NPU`. The script wraps `build/benchmark/policy_output_diff`, which can also be run directly with `--action-scale`. `compare_outputs.sh` needs Python 3 with PyYAML to read `config.yaml`. Install it with `sudo apt install python3-yaml`, or with `pip install pyyaml` in a virtual environment.
+- The argument is the params directory of the policy to check: `config/policy/<name>/params`, where `<name>` is `karate`, `wbc`, or `velocity`.
+- It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200) and the max joint target difference in radians.
+- The joint target difference is the action difference times the per-joint action scale from `config.yaml` (`action.scale`, or `actions.JointPositionAction.scale`).
+- `CONFIGS` defaults to `openvino:CPU openvino:GPU openvino:NPU`. Set it to check other configurations, for example `CONFIGS="openvino-ep:GPU openvino-ep:NPU"`.
+- The script wraps `build/benchmark/policy_output_diff`, which can also be run directly with `--action-scale`.
+- `compare_outputs.sh` needs Python 3 with PyYAML to read `config.yaml`. Install it with `sudo apt install python3-yaml`, or with `pip install pyyaml` in a virtual environment.
 
 ## Device selection
 
@@ -105,7 +118,13 @@ Use `--model PATH` to benchmark a different exported policy. Reported metrics in
 
 Reports include `requested_device`, resolved `device`, `device_name`, and `execution_provider`. For CUDA and the OpenVINO EP, `device_name` is a device identifier rather than a hardware marketing name. CPU runs retain `benchmark=policy_cpu`; accelerator runs use `benchmark=policy_inference`. Existing latency keys and the CSV format (`iteration,latency_us`) are unchanged. CPU utilization and RSS are **host-process** metrics, not accelerator utilization or device memory; reports mark this with `resource_metrics_scope=host_process`. Precision remains at each backend's default. Thread counts also remain at each backend's default unless `--threads N` is given, so default runs are not thread-count-normalized comparisons.
 
-`--threads N` (CPU only) sets the CPU inference thread count for a thread-normalized comparison and is reported as `threads=N` (`threads=default` otherwise). ONNX Runtime sets its intra-op thread count. Because `OrtRunner` has no thread setting, this path uses a plain ONNX Runtime CPU session instead of `OrtRunner::act()`. Direct OpenVINO sets `INFERENCE_NUM_THREADS`. The OpenVINO EP sets both the ONNX Runtime intra-op thread count and `INFERENCE_NUM_THREADS` through the EP's `load_config` option, so its process may use more than `N` threads in total.
+## CPU threads
+
+`--threads N` (CPU only) sets the CPU inference thread count for a thread-normalized comparison. Reports show it as `threads=N`, or `threads=default` without the option.
+
+- ONNX Runtime sets its intra-op thread count. Because `OrtRunner` has no thread setting, this path uses a plain ONNX Runtime CPU session instead of `OrtRunner::act()`.
+- Direct OpenVINO sets `INFERENCE_NUM_THREADS`.
+- The OpenVINO EP sets both the ONNX Runtime intra-op thread count and `INFERENCE_NUM_THREADS` through the EP's `load_config` option, so its process may use more than `N` threads in total.
 
 ## Source layout and tests
 
