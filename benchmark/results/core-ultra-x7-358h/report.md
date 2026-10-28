@@ -6,7 +6,7 @@ ONNX Runtime on CPU compared with OpenVINO on CPU, iGPU, and NPU. OpenVINO is te
 
 | Item | Value |
 |---|---|
-| CPU | Intel Core Ultra X7 358H (16 threads) |
+| CPU | Intel Core Ultra X7 358H (16 cores: 4 P-cores, 8 E-cores, 4 LP E-cores) |
 | iGPU / NPU | Intel Arc B390 / Intel AI Boost (NPU5) |
 | OS / kernel | Ubuntu 26.04, 7.0.0-38-generic |
 | CPU power | `performance` governor, platform profile `balanced` |
@@ -16,7 +16,7 @@ ONNX Runtime on CPU compared with OpenVINO on CPU, iGPU, and NPU. OpenVINO is te
 | Drivers | GPU 26.35.39758.17, NPU 1.38.0, Level Zero 1.32.0 |
 | Runs | 5 rounds, 500 warm-up + 20000 measured calls per run, median of rounds |
 
-Inputs are synthetic float32 values. Latency is one call: input copy, inference, and output copy. It does not include observation building or robot I/O.
+Inputs are synthetic float32 values. Latency is one call: input copy, inference, and output copy. It does not include observation building or robot I/O. The benchmark runs the calls with no wait in between. On the robot, the controller calls the policy every 20 ms instead. So latency and CPU usage on the robot may differ.
 
 ## Default settings
 
@@ -48,7 +48,7 @@ Each runtime uses its default threads and precision. Latency is in µs. `cpu %` 
 
 ## Same CPU thread count (`--threads N`)
 
-p50 latency in µs. Other metrics are in `<model>-threads-N/summary.csv`.
+p50 latency in µs. Other metrics are in `<model>-threads-N/summary.csv`. The OpenVINO EP used more cores than the thread count: 244–289% CPU at `--threads 2` and 568–685% at `--threads 4`. The likely reason is that ONNX Runtime and OpenVINO each run their own thread pool. `--threads` does not choose between P-cores and E-cores.
 
 | Model | Threads | ONNX Runtime | OpenVINO | OpenVINO EP |
 |---|---|---|---|---|
@@ -86,7 +86,8 @@ GPU and NPU use FP16 by default, so their outputs differ a little. Not yet check
   - wbc: OpenVINO is about 22–24% faster at 2 or 4 threads, and about the same at 1 thread.
   - velocity: ONNX Runtime is about 15–22% faster at 2 or 4 threads, and about 9% faster at 1 thread.
   - karate: ONNX Runtime is about 9% faster at 1 thread. OpenVINO is 3–5% faster at 2 or 4 threads.
-- ONNX Runtime uses about 13–16 cores by default. Compared with 4 threads, this saves only about 2.5 µs for karate and wbc, and nothing for velocity (10.7 µs vs 10.6 µs). On the robot, consider limiting threads with `--threads`.
+- karate and wbc have the same network structure. Only the weights differ. Still, ONNX Runtime is 6.3–8.1 µs slower on wbc at every thread setting, while OpenVINO differs by at most 2.9 µs. The cause is not confirmed yet.
+- ONNX Runtime uses about 13–16 cores by default. Compared with 4 threads, this saves only about 2.5 µs for karate and wbc, and nothing for velocity (10.7 µs vs 10.6 µs). On the robot, consider limiting the thread count. To do that, a thread setting must first be added to the controller's `OrtRunner`.
 - NPU uses the least host CPU (about 0.16 core), at about 70 µs per call. It is the choice if the CPU is busy.
 - Test GPU and NPU in closed loop before using them on the robot, because of the FP16 output difference.
 - OpenVINO EP is close to direct OpenVINO on GPU and NPU, but starts slower and uses more host CPU.

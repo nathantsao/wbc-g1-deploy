@@ -13,7 +13,8 @@ std::vector<Ort::ConstEpDevice> openvino_devices(Ort::Env& env, const Options& o
   const auto is_openvino = [](const Ort::ConstEpDevice& device) {
     return std::strcmp(device.EpName(), "OpenVINOExecutionProvider") == 0;
   };
-  // ORT shares one environment per process, so a second backend must not register the plugin again.
+  // ORT shares one environment while any Ort::Env exists. A backend created while another one
+  // still exists must not register the plugin again.
   const auto registered = env.GetEpDevices();
   if (std::none_of(registered.begin(), registered.end(), is_openvino)) {
     env.RegisterExecutionProviderLibrary(
