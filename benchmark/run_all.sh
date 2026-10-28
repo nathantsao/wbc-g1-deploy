@@ -9,7 +9,9 @@
 #   REPEATS=5 ITERATIONS=50000 benchmark/run_all.sh --model config/policy/wbc/params/policy.onnx
 #   CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU" benchmark/run_all.sh --threads 2
 #
-# Extra arguments are passed to every run.
+# Extra arguments are passed to every run. The script rejects the options it sets for
+# each configuration: --runtime, --device, --warmup, --iterations, --csv,
+# --provider-library, and --list-devices.
 #
 # Environment variables (default in brackets):
 #   CONFIGS     runtime:device pairs to run [all 7, see DEFAULT_CONFIGS]
@@ -36,6 +38,16 @@ if [[ ! -x "${BIN}" ]]; then
   echo "Benchmark binary not found: ${BIN}" >&2
   exit 1
 fi
+
+# These options are set for each configuration. Passing them again would mislabel the results.
+for arg in "$@"; do
+  case "${arg}" in
+    --runtime|--device|--warmup|--iterations|--csv|--provider-library|--list-devices)
+      echo "${arg} is set by run_all.sh for each configuration. Use CONFIGS, WARMUP, ITERATIONS, OUT, or EP_LIB instead." >&2
+      exit 1
+      ;;
+  esac
+done
 
 read -ra configs <<< "${CONFIGS:-${DEFAULT_CONFIGS}}"
 if [[ -z "${EP_LIB}" ]]; then
