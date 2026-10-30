@@ -4,6 +4,11 @@ project(wbc_policy_cpu_benchmark LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Unoptimized wrapper code would inflate measured latency.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
@@ -53,6 +58,11 @@ target_link_libraries(onnx_policy_cpu_benchmark PRIVATE policy_benchmark_lib)
 set_target_properties(onnx_policy_cpu_benchmark PROPERTIES
   BUILD_RPATH "${ONNXRUNTIME_DIR}/lib"
 )
+add_executable(policy_output_diff output_diff.cpp)
+target_link_libraries(policy_output_diff PRIVATE policy_benchmark_lib)
+set_target_properties(policy_output_diff PROPERTIES
+  BUILD_RPATH "${ONNXRUNTIME_DIR}/lib"
+)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -63,5 +73,20 @@ if(BUILD_TESTING)
   if(EXISTS "${TEST_MODEL}")
     add_test(NAME policy_benchmark_onnx_cpu COMMAND policy_benchmark_tests onnx "${TEST_MODEL}")
     add_test(NAME policy_benchmark_openvino_cpu COMMAND policy_benchmark_tests openvino "${TEST_MODEL}")
+    set(OVEP_VERSION "1.8.1" CACHE STRING
+      "OpenVINO EP plugin version installed by scripts/bootstrap_thirdparty_intel.sh")
+    set(OPENVINO_EP_LIBRARY "" CACHE FILEPATH
+      "OpenVINO EP plugin library for the openvino-ep inference test. Leave empty to use the OVEP_VERSION install under thirdparty/.")
+    set(ep_test_library "${OPENVINO_EP_LIBRARY}")
+    if(NOT ep_test_library)
+      # Fixed by version, as in run_all.sh, so the same plugin is used when several are installed.
+      set(ep_test_library "${REPO_ROOT}/thirdparty/onnxruntime-ep-openvino-${OVEP_VERSION}-install/Release/lib/libonnxruntime_providers_openvino_plugin.so")
+    elseif(NOT EXISTS "${ep_test_library}")
+      message(WARNING "OPENVINO_EP_LIBRARY does not exist: ${ep_test_library}. Skipping the openvino-ep test.")
+    endif()
+    if(ep_test_library AND EXISTS "${ep_test_library}")
+      add_test(NAME policy_benchmark_openvino_ep_cpu COMMAND policy_benchmark_tests
+        openvino-ep "${TEST_MODEL}" CPU "${ep_test_library}")
+    endif()
   endif()
 endif()

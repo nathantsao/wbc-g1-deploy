@@ -9,6 +9,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -55,6 +56,14 @@ void test_options() {
                          "--provider-library", "/plugin.so", "--list-devices"});
   check(ep.device == "NPU" && ep.list_devices, "EP options not parsed");
   check(parse({"--seed", "4294967295"}).seed == 4294967295U, "Maximum seed rejected");
+  check(defaults.threads == 0, "Default threads changed");
+  check(parse({"--threads", "2"}).threads == 2, "ONNX threads not parsed");
+  check(parse({"--runtime", "openvino", "--threads", "1"}).threads == 1,
+        "OpenVINO threads not parsed");
+  expect_error([] { parse({"--threads", "0"}); }, "--threads must be greater than zero");
+  expect_error([] { parse({"--threads", "2147483648"}); }, "int range");
+  expect_error([] { parse({"--runtime", "openvino", "--device", "GPU", "--threads", "2"}); },
+               "--threads is only valid");
   expect_error([] { parse({"--iterations", "0"}); }, "greater than zero");
   for (const std::string value : {"-1", "1x", "", " 1", "+1", "18446744073709551616"}) {
     expect_error([&] { parse({"--iterations", value}); }, "Invalid value");
@@ -81,6 +90,55 @@ void test_options() {
   }
   expect_error([] { parse({"--runtime", "openvino-ep"}); }, "--provider-library is required");
   expect_error([] { parse({"--provider-library", "/plugin.so"}); }, "only valid");
+  check(policy_benchmark::parse_count("3", "--seeds") == 3, "parse_count rejected a digit");
+  for (const std::string value : {"3abc", "3.0", " 3", "+3", "-3", "", "0x3"}) {
+    expect_error([&] { policy_benchmark::parse_count(value, "--seeds"); },
+                 "Invalid value for --seeds");
+  }
+}
+
+void test_output_compare() {
+  using policy_benchmark::compare_outputs;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  const policy_benchmark::SeedOutputs baseline{{0.0f, 1.0f}, {2.0f, 3.0f}};
+  const policy_benchmark::SeedOutputs candidate{{0.5f, 1.0f}, {2.0f, 2.75f}};
+  const auto diff = compare_outputs(baseline, candidate, {2.0f, 4.0f});
+  check(diff.max_action_diff == 0.5 && diff.max_joint_target_diff == 1.0,
+        "Wrong max action or joint target difference");
+  check(compare_outputs(baseline, baseline, {}).max_action_diff == 0 &&
+        compare_outputs(baseline, candidate, {}).max_joint_target_diff == 0,
+        "Identical outputs or missing scale gave a nonzero difference");
+  check(policy_benchmark::first_non_finite({1.0f, nan, inf}) == 1 &&
+        policy_benchmark::first_non_finite({1.0f, 2.0f}) == 2, "first_non_finite changed");
+
+  for (const float bad : {nan, -nan, inf, -inf}) {
+    auto bad_baseline = baseline;
+    bad_baseline[1][0] = bad;
+    expect_error([&] { policy_benchmark::check_reference(bad_baseline, {}); },
+                 "Baseline output for seed 2 is non-finite");
+    expect_error([&] { compare_outputs(bad_baseline, candidate, {}); },
+                 "Baseline output for seed 2 is non-finite");
+
+    // std::max skips NaN, so without the check a NaN candidate would report a 0.5 difference.
+    auto bad_candidate = candidate;
+    bad_candidate[1][1] = bad;
+    expect_error([&] { compare_outputs(baseline, bad_candidate, {}); },
+                 "Candidate output for seed 2 is non-finite");
+    expect_error([&] { compare_outputs(baseline, bad_candidate, {1.0f, 1.0f}); },
+                 "Candidate output for seed 2 is non-finite");
+
+    expect_error([&] { policy_benchmark::check_reference(baseline, {1.0f, bad}); },
+                 "--action-scale is non-finite");
+    expect_error([&] { compare_outputs(baseline, candidate, {bad, 1.0f}); },
+                 "--action-scale is non-finite");
+  }
+  expect_error([&] { policy_benchmark::check_reference(baseline, {1.0f}); },
+               "--action-scale has 1 values but the policy outputs 2");
+  expect_error([&] { compare_outputs(baseline, {{0.0f, 1.0f}}, {}); }, "1 seeds");
+  expect_error([&] { compare_outputs(baseline, {{0.0f}, {2.0f, 3.0f}}, {}); },
+               "Output size differs for seed 1");
+  expect_error([] { policy_benchmark::check_reference({}, {}); }, "no outputs");
 }
 
 void test_device_resolution() {
@@ -130,7 +188,7 @@ void test_report_and_csv() {
   policy_benchmark::Options options;
   options.measured_iterations = 3;
   policy_benchmark::BenchmarkResult result;
-  result.backend = {"CPU", "test CPU", "test provider"};
+  result.backend = {"CPU", "test CPU", "test provider", {{"onnxruntime_version", "1.2.3"}}};
   result.model.inputs = {{"obs", {1, 2}, 2}};
   result.model.output_shape = {1, 29};
   result.latency_us = {3, 1, 2};
@@ -138,6 +196,7 @@ void test_report_and_csv() {
   result.wall_seconds = 1;
   result.rss_before_kib = 10;
   result.rss_after_kib = 12;
+  result.precision = {"f16", "compiled_model"};
   std::ostringstream report;
   policy_benchmark::print_report(options, result, report);
   for (const std::string expected : {
@@ -145,7 +204,9 @@ void test_report_and_csv() {
          "input.obs.shape=[1,2] elements=2\n", "output.shape=[1,29]\n",
          "latency_mean_us=2.000\n", "throughput_inferences_per_sec=3.000\n",
          "policy_deadline_misses=0/3 (0.000%)\n", "rss_delta_kib=2\n",
-         "resource_metrics_scope=host_process\n"}) {
+         "resource_metrics_scope=host_process\n", "threads=default\n",
+         "onnxruntime_version=1.2.3\n", "inference_precision=f16\n",
+         "inference_precision_source=compiled_model\n"}) {
     check(report.str().find(expected) != std::string::npos, "Missing report field: " + expected);
   }
   options.runtime = "onnx";
@@ -153,12 +214,15 @@ void test_report_and_csv() {
   options.device = "GPU";
   options.device_id = 2;
   result.backend = {"GPU.2", "CUDA device 2", "ONNX Runtime CUDA provider"};
+  result.precision = {};
   std::ostringstream gpu_report;
   policy_benchmark::print_report(options, result, gpu_report);
   check(gpu_report.str().find("device=GPU.2\n") != std::string::npos &&
         gpu_report.str().find("cuda_device_id=2\n") != std::string::npos &&
         gpu_report.str().find("ort_cpu_ep_fallback=disabled\n") != std::string::npos,
         "Accelerator report is misleading");
+  check(gpu_report.str().find("inference_precision") == std::string::npos,
+        "Report shows a precision the runtime did not report");
 
   char path[] = "/tmp/policy-benchmark-csv-XXXXXX";
   const int fd = mkstemp(path);
@@ -181,11 +245,14 @@ void test_report_and_csv() {
 }
 
 void test_inference(const std::string& runtime, const std::string& model_path,
-                    const std::string& device) {
+                    const std::string& device, const std::string& provider_library) {
   policy_benchmark::Options options;
   options.runtime = runtime;
   options.device = device;
   options.model_path = model_path;
+  options.provider_library_path = provider_library;
+  check(runtime != "openvino-ep" || !provider_library.empty(),
+        "openvino-ep inference tests require PROVIDER_LIBRARY");
   options.warmup_iterations = 0;
   options.measured_iterations = 1;
   const auto single = policy_benchmark::run_benchmark(options);
@@ -210,9 +277,31 @@ void test_inference(const std::string& runtime, const std::string& model_path,
   const auto action = backend->infer(policy_benchmark::make_observations(model, options.seed));
   check(action.size() == static_cast<size_t>(model.output_shape[1]), "Wrong action extent");
   for (float value : action) check(std::isfinite(value), "Nonfinite action");
+  if (device == "CPU") {
+    options.threads = 1;
+    const auto single_thread = policy_benchmark::run_benchmark(options);
+    check(single_thread.latency_us.size() == 5 &&
+          std::abs(single_thread.output_checksum - result.output_checksum) < 1e-3,
+          "Explicit thread count changed inference output");
+  }
   if (device != "CPU") {
     check(result.backend.device.compare(0, 3, device.substr(0, 3)) == 0,
           "Accelerator request did not execute on the requested device type");
+  }
+  if (runtime != "onnx") {
+    check(!result.precision.precision.empty() && result.precision.precision != "unknown",
+          "OpenVINO inference precision not reported");
+  }
+  // The EP's precision is OpenVINO's device default. Check that it matches what direct OpenVINO
+  // compiles this model with on the same device.
+  if (runtime == "openvino-ep") {
+    auto direct_options = options;
+    direct_options.runtime = "openvino";
+    direct_options.threads = 0;
+    const auto direct = policy_benchmark::make_backend(direct_options, model)->inference_precision();
+    check(direct.precision == result.precision.precision,
+          "OpenVINO EP precision " + result.precision.precision +
+          " differs from direct OpenVINO " + direct.precision);
   }
 }
 
@@ -220,17 +309,19 @@ void test_inference(const std::string& runtime, const std::string& model_path,
 
 int main(int argc, char** argv) {
   try {
-    if (argc == 3 || argc == 4) {
-      test_inference(argv[1], argv[2], argc == 4 ? argv[3] : "CPU");
+    if (argc >= 3 && argc <= 5) {
+      test_inference(argv[1], argv[2], argc >= 4 ? argv[3] : "CPU", argc == 5 ? argv[4] : "");
       std::cout << "Synthetic inference tests passed\n";
       return 0;
     }
-    check(argc == 1, "Usage: policy_benchmark_tests [RUNTIME MODEL [DEVICE]]");
+    check(argc == 1,
+          "Usage: policy_benchmark_tests [RUNTIME MODEL [DEVICE [PROVIDER_LIBRARY]]]");
     test_options();
     test_device_resolution();
     test_statistics();
     test_observations();
     test_report_and_csv();
+    test_output_compare();
     std::cout << "All benchmark unit tests passed\n";
     return 0;
   } catch (const std::exception& error) {

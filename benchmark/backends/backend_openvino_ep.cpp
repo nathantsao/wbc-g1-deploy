@@ -1,20 +1,29 @@
 #include "backend_ort.h"
 
+#include <algorithm>
 #include <cstring>
 #include <ostream>
 #include <stdexcept>
+#include <openvino/openvino.hpp>
 
 namespace policy_benchmark {
 #if ORT_API_VERSION >= 23
 namespace {
 
 std::vector<Ort::ConstEpDevice> openvino_devices(Ort::Env& env, const Options& options) {
-  env.RegisterExecutionProviderLibrary(
-      "OpenVINOExecutionProvider", options.provider_library_path.c_str());
+  const auto is_openvino = [](const Ort::ConstEpDevice& device) {
+    return std::strcmp(device.EpName(), "OpenVINOExecutionProvider") == 0;
+  };
+  // ORT shares one environment while any Ort::Env exists. A backend created while another one
+  // still exists must not register the plugin again.
+  const auto registered = env.GetEpDevices();
+  if (std::none_of(registered.begin(), registered.end(), is_openvino)) {
+    env.RegisterExecutionProviderLibrary(
+        "OpenVINOExecutionProvider", options.provider_library_path.c_str());
+  }
   std::vector<Ort::ConstEpDevice> devices;
   for (const auto& device : env.GetEpDevices()) {
-    if (std::strcmp(device.EpName(), "OpenVINOExecutionProvider") == 0 &&
-        device.EpMetadata().GetValue("ov_device") != nullptr) {
+    if (is_openvino(device) && device.EpMetadata().GetValue("ov_device") != nullptr) {
       devices.push_back(device);
     }
   }
@@ -47,11 +56,47 @@ public:
     if (resolved != "CPU") {
       session_options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
     }
-    const std::unordered_map<std::string, std::string> provider_options;
+    std::unordered_map<std::string, std::string> provider_options;
+    if (options.threads > 0) {
+      session_options.SetIntraOpNumThreads(options.threads);
+      // OpenVINO EP 1.8 ignores num_of_threads, so the thread count goes through load_config.
+      provider_options["load_config"] = "{\"CPU\":{\"INFERENCE_NUM_THREADS\":\"" +
+                                        std::to_string(options.threads) + "\"}}";
+    }
     session_options.AppendExecutionProvider_V2(env_, selected, provider_options);
     session_ = std::make_unique<Ort::Session>(env_, options.model_path.c_str(), session_options);
-    info = {resolved, resolved, "ONNX Runtime OpenVINO EP plugin"};
+    const auto metadata = selected.front().EpMetadata();
+    const auto value_or_unknown = [&](const char* key) {
+      const char* value = metadata.GetValue(key);
+      return std::string(value ? value : "unknown");
+    };
+    std::string options_text;
+    for (const auto& [key, value] : provider_options) {
+      options_text += (options_text.empty() ? "" : ";") + key + "=" + value;
+    }
+    ov_device_ = resolved;
+    info = {resolved, resolved, "ONNX Runtime OpenVINO EP plugin",
+            {{"onnxruntime_version", Ort::GetVersionString()},
+             {"openvino_version", ov::get_openvino_version().buildNumber},
+             {"openvino_ep_version", value_or_unknown("version")},
+             {"openvino_ep_library", value_or_unknown("library_path")},
+             {"openvino_ep_provider_options", options_text.empty() ? "none" : options_text}}};
   }
+
+  // ORT cannot query the model the plugin compiled. EP 1.8 ignores the "precision" provider
+  // option and compiles with load_config, which sets no INFERENCE_PRECISION_HINT here, so the
+  // device default from the same OpenVINO library applies.
+  PrecisionInfo inference_precision() const override {
+    try {
+      return {ov::Core().get_property(ov_device_, ov::hint::inference_precision).get_type_name(),
+              "openvino_device_default"};
+    } catch (const std::exception&) {
+      return {"unknown", "openvino_device_default"};
+    }
+  }
+
+private:
+  std::string ov_device_;
 };
 
 }  // namespace

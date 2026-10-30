@@ -15,6 +15,7 @@ struct Options {
   std::string device = "CPU";
   std::string provider = "cpu";
   int device_id = 0;
+  int threads = 0;  // 0 keeps the runtime default
   std::string model_path = WBC_BENCHMARK_DEFAULT_MODEL;
   std::string provider_library_path;
   std::string csv_path;
@@ -25,5 +26,7 @@ struct Options {
 };
 
 Options parse_options(int argc, char** argv);
+// Parses a non-negative decimal integer made only of digits; throws "Invalid value for OPTION".
+size_t parse_count(const std::string& value, const std::string& option);
 
 }  // namespace policy_benchmark

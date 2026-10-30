@@ -8,6 +8,7 @@
 #include <fstream>
 #include <numeric>
 #include <stdexcept>
+#include <string>
 #include <sys/resource.h>
 
 namespace policy_benchmark {
@@ -48,6 +49,30 @@ long current_rss_kib() {
 double percentile(const std::vector<double>& sorted, double fraction) {
   const size_t index = static_cast<size_t>(std::ceil(fraction * sorted.size())) - 1;
   return sorted[std::min(index, sorted.size() - 1)];
+}
+
+void check_finite(const std::vector<float>& values, const std::string& name) {
+  const size_t index = first_non_finite(values);
+  if (index != values.size()) {
+    throw std::runtime_error(name + " is non-finite (" + std::to_string(values[index]) +
+                             ") at index " + std::to_string(index));
+  }
+}
+
+void check_finite(const SeedOutputs& outputs, const std::string& name) {
+  for (size_t s = 0; s < outputs.size(); ++s) {
+    check_finite(outputs[s], name + " for seed " + std::to_string(s + 1));
+  }
+}
+
+// Called after each inference returns, so the check is not part of the per-call latency.
+void check_output(const std::vector<float>& action, const char* phase, size_t iteration) {
+  const size_t index = first_non_finite(action);
+  if (index != action.size()) {
+    throw std::runtime_error("Non-finite output (" + std::to_string(action[index]) + ") in " +
+                             phase + " iteration " + std::to_string(iteration) + ", index " +
+                             std::to_string(index));
+  }
 }
 
 }  // namespace
@@ -94,6 +119,7 @@ BenchmarkResult run_benchmark(const Options& options) {
   std::vector<float> action;
   for (size_t i = 0; i < options.warmup_iterations; ++i) {
     action = runner->infer(observations);
+    check_output(action, "warm-up", i);
   }
   result.warmup_ms =
       std::chrono::duration<double, std::milli>(Clock::now() - warmup_start).count();
@@ -108,6 +134,7 @@ BenchmarkResult run_benchmark(const Options& options) {
     const auto call_end = Clock::now();
     result.latency_us.push_back(
         std::chrono::duration<double, std::micro>(call_end - call_start).count());
+    check_output(action, "measured", i);
     if (!action.empty()) result.output_checksum += action[i % action.size()];
   }
   const auto benchmark_end = Clock::now();
@@ -117,7 +144,53 @@ BenchmarkResult run_benchmark(const Options& options) {
   result.cpu_utilization = result.wall_seconds > 0.0
       ? (cpu_after - cpu_before) / result.wall_seconds * 100.0 : 0.0;
   result.latency = summarize_latency(result.latency_us);
+  result.precision = runner->inference_precision();
   return result;
+}
+
+size_t first_non_finite(const std::vector<float>& values) {
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (!std::isfinite(values[i])) return i;
+  }
+  return values.size();
+}
+
+void check_reference(const SeedOutputs& baseline, const std::vector<float>& scale) {
+  if (baseline.empty()) throw std::runtime_error("Baseline has no outputs");
+  check_finite(baseline, "Baseline output");
+  check_finite(scale, "--action-scale");
+  if (!scale.empty() && scale.size() != baseline.front().size()) {
+    throw std::runtime_error("--action-scale has " + std::to_string(scale.size()) +
+                             " values but the policy outputs " +
+                             std::to_string(baseline.front().size()));
+  }
+}
+
+OutputDiff compare_outputs(const SeedOutputs& baseline, const SeedOutputs& candidate,
+                           const std::vector<float>& scale) {
+  check_reference(baseline, scale);
+  if (candidate.size() != baseline.size()) {
+    throw std::runtime_error("Candidate has " + std::to_string(candidate.size()) +
+                             " seeds but the baseline has " + std::to_string(baseline.size()));
+  }
+  // std::max ignores NaN, so non-finite outputs must be rejected before taking the max.
+  check_finite(candidate, "Candidate output");
+  OutputDiff diff;
+  for (size_t s = 0; s < baseline.size(); ++s) {
+    if (candidate[s].size() != baseline[s].size()) {
+      throw std::runtime_error("Output size differs for seed " + std::to_string(s + 1));
+    }
+    for (size_t j = 0; j < baseline[s].size(); ++j) {
+      const double action_diff =
+          std::abs(static_cast<double>(candidate[s][j]) - static_cast<double>(baseline[s][j]));
+      diff.max_action_diff = std::max(diff.max_action_diff, action_diff);
+      if (!scale.empty()) {
+        diff.max_joint_target_diff =
+            std::max(diff.max_joint_target_diff, action_diff * scale[j]);
+      }
+    }
+  }
+  return diff;
 }
 
 }  // namespace policy_benchmark
