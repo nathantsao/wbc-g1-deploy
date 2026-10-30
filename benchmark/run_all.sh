@@ -81,7 +81,7 @@ mkdir -p "${OUT}"
   echo "configs=${configs[*]}"
 } > "${OUT}/environment.txt"
 
-# Run every config once per round, so CPU heat and frequency changes affect all configs equally.
+# Run every config once per round so CPU heat and frequency changes are spread across configs.
 for ((round = 1; round <= REPEATS; round++)); do
   for config in "${configs[@]}"; do
     runtime="${config%%:*}"

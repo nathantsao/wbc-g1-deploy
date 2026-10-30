@@ -39,7 +39,7 @@ benchmark/run_all.sh
 ```
 
 - The command above runs the karate policy, which is the default model. For another policy, add `--model config/policy/<name>/params/policy.onnx`, where `<name>` is `wbc` or `velocity`.
-- Each of the `REPEATS` rounds (default 3) runs every configuration once, so CPU heat and frequency changes affect all configurations about equally. The configurations run in the same order in every round.
+- Each of the `REPEATS` rounds (default 3) runs every configuration once so CPU heat and frequency changes are spread across configurations. The configurations run in the same order in every round so later ones may still see slightly different conditions.
 - The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports (`.txt` for stdout, `.err` for stderr), per-call latency CSVs, `exit_codes.txt`, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`.
 - Only runs that exit with code 0 are summarized. `summary.csv` has one column per report field: the median for numeric fields (`policy_deadline_misses` is the miss count), the value for text fields that are equal in every run, and all values joined by ` | ` for text fields that differ. Its `runs` and `failed_runs` columns count the runs that were and were not used.
 - A configuration with no successful run is reported as `FAILED` without stopping the others. The script exits with an error only if every configuration fails.
@@ -127,7 +127,7 @@ Reports include `requested_device`, resolved `device`, `device_name`, and `execu
 
 `--threads N` (CPU only) sets the CPU inference thread count for a thread-normalized comparison. Reports show it as `threads=N`, or `threads=default` without the option.
 
-- ONNX Runtime sets its intra-op thread count. Because `OrtRunner` has no thread setting, this path uses a plain ONNX Runtime CPU session instead of `OrtRunner::act()`.
+- ONNX Runtime sets its intra-op thread count. Because `OrtRunner` has no thread setting, this path uses a plain ONNX Runtime CPU session instead of `OrtRunner::act()`. By default ONNX Runtime pins one thread to each physical core. With an explicit thread count it pins none.
 - Direct OpenVINO sets `INFERENCE_NUM_THREADS`.
 - The OpenVINO EP sets both the ONNX Runtime intra-op thread count and `INFERENCE_NUM_THREADS` through the EP's `load_config` option, so its process may use more than `N` threads in total.
 
