@@ -99,8 +99,10 @@ continues advancing while stationary and resets when the policy environment rese
 ## Dependencies
 
 - [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
-- ONNX Runtime 1.22.0 (`scripts/bootstrap_thirdparty.sh`)
+- ONNX Runtime 1.30.0 (`scripts/bootstrap_thirdparty.sh`)
 - yaml-cpp, Boost, Eigen3, fmt, spdlog, zlib
+- Optional, Intel only: OpenVINO 2026.4.1 and the OpenVINO EP plugin 1.8.1
+  (`scripts/bootstrap_thirdparty_intel.sh`). See [Inference runtime and device](#inference-runtime-and-device).
 
 Ubuntu packages (typical dev machine):
 
@@ -153,12 +155,96 @@ pd_torque_clipping:
 
 `Wbc_Tracking.pd_torque_clipping` overrides these defaults when set.
 
+## Inference runtime and device
+
+The `inference:` block in `config/config.yaml` selects how the policy runs. A state can override any key with its own `inference:` block, like `policy_dir`.
+
+```yaml
+inference:
+  runtime: openvino   # onnxruntime | openvino | openvino-ep
+  device: NPU         # CPU | GPU | NPU
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `runtime` | `onnxruntime` | `onnxruntime`: ONNX Runtime CPU. `openvino`: OpenVINO Runtime. `openvino-ep`: ONNX Runtime with the OpenVINO Execution Provider (EP) plugin. |
+| `device` | `CPU` | `CPU`, `GPU`, or `NPU`. `onnxruntime` supports `CPU` only. |
+| `threads` | `0` | CPU inference threads. `0` keeps the runtime default. |
+| `cache_dir` | `~/.cache/wbc_g1_deploy/openvino` | Compiled-model cache for `openvino` and `openvino-ep`. `""` turns it off. |
+| `openvino_ep_library` | plugin under `thirdparty/` | OpenVINO EP plugin for `openvino-ep`. A relative path starts at the repo root. |
+| `latency_log_interval` | `0` | Seconds between inference latency log lines. `0` turns the log off. |
+
+Each state loads its model when the controller starts, never in the control loop, and logs the result:
+
+```
+Velocity: policy inference on OpenVINO NPU (Intel(R) AI Boost, f16) (threads default, cache ~/.cache/wbc_g1_deploy/openvino), loaded in 297 ms
+```
+
+A model loaded from the cache shows its precision as `unknown`.
+
+A wrong setting or a missing device stops the controller at start with an error message. For a missing device, the message lists the available devices.
+
+### Build options
+
+| Runtime | CMake | Install |
+|---------|-------|---------|
+| `onnxruntime` | default | `scripts/bootstrap_thirdparty.sh` |
+| `openvino` | `-DWBC_ENABLE_OPENVINO=ON` | `scripts/bootstrap_thirdparty_intel.sh` |
+| `openvino-ep` | default | `scripts/bootstrap_thirdparty_intel.sh` |
+
+```bash
+scripts/bootstrap_thirdparty_intel.sh   # add --system-deps for the GPU/NPU drivers (sudo)
+cmake -S . -B build -DWBC_ENABLE_OPENVINO=ON
+cmake --build build -j
+```
+
+- The default build links only ONNX Runtime. Use it on the G1 onboard PC (aarch64).
+- `openvino-ep` works without `WBC_ENABLE_OPENVINO`, because the plugin ships its own OpenVINO libraries.
+- CMake variables: `OPENVINO_VERSION` (2026.4.1), `OVEP_VERSION` (1.8.1), and `OPENVINO_EP_LIBRARY` (default plugin path).
+
+### Simulator results
+
+Every runtime and device kept the robot standing. Every call finished within the 20 ms policy period.
+
+Test machine: Intel Core Ultra X7 358H, Arc B390 iGPU (driver 26.35.39758.17), NPU driver 1.38.0, `powersave` governor. Ubuntu 26.04, ONNX Runtime 1.30.0, OpenVINO 2026.4.1, OpenVINO EP 1.8.1. Run on 2026-10-30 at commit 2dbb89b.
+
+Test sequence, with `latency_log_interval: 5`:
+
+1. Press `2` (FixStand). The simulator starts with no motor torque, so the robot is already on the floor.
+2. Press Backspace in the MuJoCo window to stand the robot up, then press `3` (WBC tracking) right away.
+3. Press `a` to play `bow`. Then press Right and `a` to play `karate_move_1`.
+4. Press `6` (Velocity). Hold `w` 5 s, `q` 3 s, `s` 3 s, `d` 3 s, then wait 3 s.
+
+The robot counts as fallen if the IMU height drops below 0.45 m or roll or pitch goes above 0.8 rad. The lowest height was 0.52 m, during `karate_move_1`. Each run has about 1,760 Wbc_Tracking calls and 1,000 Velocity calls. p50 is the median and p99 the worst of the 5 s window values.
+
+| Runtime | Device | `threads` | Wbc_Tracking p50 / p99 / max (µs) | Velocity p50 / p99 / max (µs) | Controller CPU (cores) |
+|---------|--------|-----------|-----------------------------------|-------------------------------|------------------------|
+| `onnxruntime` | CPU | default | 31 / 266 / 610 | 22 / 164 / 252 | 5.49 |
+| `onnxruntime` | CPU | 2 | 58 / 320 / 613 | 20 / 127 / 211 | 1.04 |
+| `onnxruntime` | CPU | 1 | 192 / 335 / 622 | 71 / 161 / 412 | 0.17 |
+| `openvino` | CPU | default | 192 / 608 / 858 | 117 / 460 / 646 | 0.17 |
+| `openvino` | CPU | 1 | 245 / 937 / 4,120 | 65 / 249 / 534 | 0.17 |
+| `openvino` | GPU | default | 359 / 2,220 / 2,310 | 364 / 9,731 / 12,125 | 0.18 |
+| `openvino` | NPU | default | 258 / 655 / 1,252 | 280 / 731 / 868 | 0.16 |
+| `openvino-ep` | CPU | default | 212 / 621 / 3,798 | 117 / 254 / 548 | 0.18 |
+| `openvino-ep` | GPU | default | 427 / 3,539 / 8,538 | 405 / 2,000 / 2,155 | 0.19 |
+| `openvino-ep` | NPU | default | 268 / 684 / 1,598 | 278 / 588 / 856 | 0.17 |
+
+Findings:
+
+- ONNX Runtime CPU with default threads is the fastest, but the controller then uses about 5.5 cores. With `threads: 2` it uses 1 core and Velocity is just as fast. Consider `threads: 2` on the robot.
+- All other runs use about 0.17 core.
+- GPU is the slowest and has the largest spikes, up to 12.1 ms.
+- NPU p50 is 258-280 µs and the slowest call is 1.6 ms. `npu_busy_time_us` grows by about 640 ms per NPU run and does not change in the other runs, so the policy really runs on the NPU.
+- Model load takes at most 470 ms per state in these runs.
+- Latency here is higher than in [benchmark/README.md](benchmark/README.md), where calls run back to back. In the controller they run every 20 ms.
+
 ## Layout
 
 ```
 wbc_g1_deploy/
   apps/wbc_g1_ctrl/        # main executable
-  src/                     # WBC tracking, clips, ONNX runtime, MDP registrations
+  src/                     # WBC tracking, clips, policy inference, MDP registrations
   include/                 # FSM + Isaac Lab-style obs runtime
   config/
   scripts/
