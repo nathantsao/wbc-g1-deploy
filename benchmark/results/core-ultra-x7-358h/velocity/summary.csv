@@ -1,8 +1,0 @@
-config,runs,latency_p50_us,latency_mean_us,latency_p99_us,latency_max_us,throughput_inferences_per_sec,initialization_ms,process_cpu_utilization_pct,rss_after_kib,p50_speedup_vs_onnx_cpu
-onnx_CPU,5,10.7,10.8,12.0,218.8,92376.9,1.2,1593.8,38164.0,1.00x
-openvino_CPU,5,13.8,13.8,15.0,60.2,72164.4,46.7,400.0,154352.0,0.77x
-openvino_GPU,5,34.2,34.6,39.3,1007.3,28893.8,79.8,100.1,160816.0,0.31x
-openvino_NPU,5,67.2,68.1,114.6,204.4,14679.8,133.2,17.2,240616.0,0.16x
-openvino-ep_CPU,5,18.0,17.4,19.2,1183.6,57422.1,54.2,1351.4,161816.0,0.59x
-openvino-ep_GPU,5,35.1,36.2,40.9,1072.8,27640.3,119.3,504.0,166492.0,0.30x
-openvino-ep_NPU,5,55.9,59.1,101.2,3040.4,16911.6,138.6,197.6,245616.0,0.19x

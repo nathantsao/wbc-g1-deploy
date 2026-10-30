@@ -1,7 +1,0 @@
-date=2026-10-28T15:13:19+08:00
-cpu=Intel(R) Core(TM) Ultra X7 358H
-kernel=7.0.0-38-generic
-governor=performance
-platform_profile=balanced
-repeats=5 warmup=500 iterations=20000 extra_args=--model config/policy/velocity/params/policy.onnx --threads 4
-configs=onnx:CPU openvino:CPU openvino-ep:CPU

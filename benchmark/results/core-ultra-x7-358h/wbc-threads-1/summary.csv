@@ -1,4 +1,0 @@
-config,runs,latency_p50_us,latency_mean_us,latency_p99_us,latency_max_us,throughput_inferences_per_sec,initialization_ms,process_cpu_utilization_pct,rss_after_kib,p50_speedup_vs_onnx_cpu
-onnx_CPU,5,55.5,55.9,58.0,112.8,17883.6,7.0,100.0,51788.0,1.00x
-openvino_CPU,5,54.9,55.2,56.8,1211.8,18104.1,57.2,99.9,166700.0,1.01x
-openvino-ep_CPU,5,56.7,57.0,59.5,1223.3,17548.5,53.3,99.9,183048.0,0.98x
