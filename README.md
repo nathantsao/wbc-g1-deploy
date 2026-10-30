@@ -180,8 +180,6 @@ Each state loads its model when the controller starts, never in the control loop
 Velocity: policy inference on OpenVINO NPU (Intel(R) AI Boost, f16) (threads default, cache ~/.cache/wbc_g1_deploy/openvino), loaded in 297 ms
 ```
 
-A model loaded from the cache shows its precision as `unknown`.
-
 A wrong setting or a missing device stops the controller at start with an error message. For a missing device, the message lists the available devices.
 
 ### Build options

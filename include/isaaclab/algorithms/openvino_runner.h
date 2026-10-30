@@ -120,6 +120,12 @@ public:
         try {
             return compiled_model_.get_property(ov::hint::inference_precision).get_type_name();
         } catch (const std::exception&) {
+        }
+        // NPU models imported from the cache do not report it. No precision hint is set, so the
+        // device default applies.
+        try {
+            return core_.get_property(device_, ov::hint::inference_precision).get_type_name();
+        } catch (const std::exception&) {
             return "unknown";
         }
     }
