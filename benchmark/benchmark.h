@@ -33,4 +33,24 @@ struct BenchmarkResult {
 LatencyStats summarize_latency(const std::vector<double>& latency_us);
 BenchmarkResult run_benchmark(const Options& options);
 
+// One action vector per seed.
+using SeedOutputs = std::vector<std::vector<float>>;
+
+struct OutputDiff {
+  double max_action_diff = 0.0;
+  double max_joint_target_diff = 0.0;  // 0 when no action scale is given
+};
+
+// Index of the first NaN or Inf in values, or values.size() if all are finite.
+size_t first_non_finite(const std::vector<float>& values);
+
+// Throws if the baseline or the action scale has a NaN or Inf, or if a non-empty scale does
+// not match the baseline action size.
+void check_reference(const SeedOutputs& baseline, const std::vector<float>& scale);
+
+// Max absolute candidate-baseline difference over all seeds and joints. Throws on an invalid
+// reference (see check_reference), a non-finite candidate output, or a seed or size mismatch.
+OutputDiff compare_outputs(const SeedOutputs& baseline, const SeedOutputs& candidate,
+                           const std::vector<float>& scale);
+
 }  // namespace policy_benchmark

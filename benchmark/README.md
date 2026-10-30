@@ -28,6 +28,8 @@ cmake --build build/benchmark -j
 
 The build type defaults to `Release`. Pass `-DCMAKE_BUILD_TYPE=...` to override it. The executable retains its original name for compatibility, including accelerator runs.
 
+A run fails with an error if any warm-up or measured output is NaN or infinite. The check runs after each call returns, so it is not part of the per-call latency samples. Like the output checksum, it is included in the wall time and throughput (about 10 ns per call).
+
 ## Run all configurations
 
 To compare ONNX Runtime CPU against OpenVINO CPU/GPU/NPU (and the OpenVINO EP plugin on each device, when built) in one step:
@@ -55,6 +57,8 @@ benchmark/compare_outputs.sh config/policy/karate/params
 - The argument is the params directory of the policy to check: `config/policy/<name>/params`, where `<name>` is `karate`, `wbc`, or `velocity`.
 - It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200) and the max joint target difference in radians.
 - The joint target difference is the action difference times the per-joint action scale from `config.yaml` (`action.scale`, or `actions.JointPositionAction.scale`).
+- A configuration with a NaN or infinite output is reported as `FAILED` and counts as a failed configuration. A NaN or infinite ONNX Runtime CPU baseline output or action scale stops the comparison with an error (exit code 1).
+- `--seeds` must be a plain decimal integer from 1 to 1000000.
 - `CONFIGS` defaults to `openvino:CPU openvino:GPU openvino:NPU`. Set it to check other configurations, for example `CONFIGS="openvino-ep:GPU openvino-ep:NPU"`.
 - The script wraps `build/benchmark/policy_output_diff`, which can also be run directly with `--action-scale`.
 - `compare_outputs.sh` needs Python 3 with PyYAML to read `config.yaml`. Install it with `sudo apt install python3-yaml`, or with `pip install pyyaml` in a virtual environment.
@@ -134,11 +138,11 @@ Reports include `requested_device`, resolved `device`, `device_name`, and `execu
 - `backends/backend.h/.cpp`: backend interface, selection, and device resolution.
 - `backends/backend_onnx.cpp`, `backends/backend_openvino.cpp`, `backends/backend_openvino_ep.cpp`: runtime implementations and discovery.
 - `backends/backend_ort.h/.cpp`: shared host-tensor/session inference for CUDA and the OpenVINO EP.
-- `benchmark.h/.cpp`: execution timing, host resource sampling, and latency statistics.
+- `benchmark.h/.cpp`: execution timing, host resource sampling, latency statistics, and the finite-output checks and action difference used by `output_diff.cpp`.
 - `report.h/.cpp`: console formatting and CSV export.
 - `run_all.sh`: runs every runtime/device configuration and writes a summary table.
 - `output_diff.cpp`, `compare_outputs.sh`: compare each configuration's actions with ONNX Runtime CPU.
-- `tests.cpp`: hardware-independent CLI, device resolution, statistics, input generation, and reporting tests.
+- `tests.cpp`: hardware-independent CLI, device resolution, statistics, input generation, reporting, and output comparison tests.
 
 ```bash
 cmake --build build/benchmark -j

@@ -9,6 +9,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -89,6 +90,55 @@ void test_options() {
   }
   expect_error([] { parse({"--runtime", "openvino-ep"}); }, "--provider-library is required");
   expect_error([] { parse({"--provider-library", "/plugin.so"}); }, "only valid");
+  check(policy_benchmark::parse_count("3", "--seeds") == 3, "parse_count rejected a digit");
+  for (const std::string value : {"3abc", "3.0", " 3", "+3", "-3", "", "0x3"}) {
+    expect_error([&] { policy_benchmark::parse_count(value, "--seeds"); },
+                 "Invalid value for --seeds");
+  }
+}
+
+void test_output_compare() {
+  using policy_benchmark::compare_outputs;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  const policy_benchmark::SeedOutputs baseline{{0.0f, 1.0f}, {2.0f, 3.0f}};
+  const policy_benchmark::SeedOutputs candidate{{0.5f, 1.0f}, {2.0f, 2.75f}};
+  const auto diff = compare_outputs(baseline, candidate, {2.0f, 4.0f});
+  check(diff.max_action_diff == 0.5 && diff.max_joint_target_diff == 1.0,
+        "Wrong max action or joint target difference");
+  check(compare_outputs(baseline, baseline, {}).max_action_diff == 0 &&
+        compare_outputs(baseline, candidate, {}).max_joint_target_diff == 0,
+        "Identical outputs or missing scale gave a nonzero difference");
+  check(policy_benchmark::first_non_finite({1.0f, nan, inf}) == 1 &&
+        policy_benchmark::first_non_finite({1.0f, 2.0f}) == 2, "first_non_finite changed");
+
+  for (const float bad : {nan, -nan, inf, -inf}) {
+    auto bad_baseline = baseline;
+    bad_baseline[1][0] = bad;
+    expect_error([&] { policy_benchmark::check_reference(bad_baseline, {}); },
+                 "Baseline output for seed 2 is non-finite");
+    expect_error([&] { compare_outputs(bad_baseline, candidate, {}); },
+                 "Baseline output for seed 2 is non-finite");
+
+    // std::max skips NaN, so without the check a NaN candidate would report a 0.5 difference.
+    auto bad_candidate = candidate;
+    bad_candidate[1][1] = bad;
+    expect_error([&] { compare_outputs(baseline, bad_candidate, {}); },
+                 "Candidate output for seed 2 is non-finite");
+    expect_error([&] { compare_outputs(baseline, bad_candidate, {1.0f, 1.0f}); },
+                 "Candidate output for seed 2 is non-finite");
+
+    expect_error([&] { policy_benchmark::check_reference(baseline, {1.0f, bad}); },
+                 "--action-scale is non-finite");
+    expect_error([&] { compare_outputs(baseline, candidate, {bad, 1.0f}); },
+                 "--action-scale is non-finite");
+  }
+  expect_error([&] { policy_benchmark::check_reference(baseline, {1.0f}); },
+               "--action-scale has 1 values but the policy outputs 2");
+  expect_error([&] { compare_outputs(baseline, {{0.0f, 1.0f}}, {}); }, "1 seeds");
+  expect_error([&] { compare_outputs(baseline, {{0.0f}, {2.0f, 3.0f}}, {}); },
+               "Output size differs for seed 1");
+  expect_error([] { policy_benchmark::check_reference({}, {}); }, "no outputs");
 }
 
 void test_device_resolution() {
@@ -250,6 +300,7 @@ int main(int argc, char** argv) {
     test_statistics();
     test_observations();
     test_report_and_csv();
+    test_output_compare();
     std::cout << "All benchmark unit tests passed\n";
     return 0;
   } catch (const std::exception& error) {

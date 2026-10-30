@@ -1,5 +1,6 @@
 // Compares each runtime:device policy output with ONNX Runtime CPU on seeded synthetic inputs.
 #include "backends/backend.h"
+#include "benchmark.h"
 #include "model.h"
 #include "options.h"
 
@@ -71,7 +72,7 @@ int main(int argc, char** argv) {
         if (arg == "--provider-library") provider_library = value;
         if (arg == "--action-scale") scale = parse_scale(value);
         if (arg == "--seeds") {
-          const unsigned long count = std::stoul(value);
+          const size_t count = policy_benchmark::parse_count(value, arg);
           if (count == 0 || count > 1000000) throw std::runtime_error("--seeds must be 1..1000000");
           seeds = static_cast<uint32_t>(count);
         }
@@ -90,11 +91,7 @@ int main(int argc, char** argv) {
     policy_benchmark::Options baseline_options;
     baseline_options.model_path = model_path;
     const auto baseline = run_seeds(baseline_options, model, seeds);
-    if (!scale.empty() && scale.size() != baseline.front().size()) {
-      throw std::runtime_error("--action-scale has " + std::to_string(scale.size()) +
-                               " values but the policy outputs " +
-                               std::to_string(baseline.front().size()));
-    }
+    policy_benchmark::check_reference(baseline, scale);
 
     std::cout << "config,seeds,max_action_diff" << (scale.empty() ? "" : ",max_joint_target_diff_rad")
               << '\n';
@@ -115,19 +112,10 @@ int main(int argc, char** argv) {
         if (options.runtime == "openvino-ep" && provider_library.empty()) {
           throw std::runtime_error("openvino-ep requires --provider-library");
         }
-        const auto actions = run_seeds(options, model, seeds);
-        double max_action = 0.0;
-        double max_joint = 0.0;
-        for (uint32_t s = 0; s < seeds; ++s) {
-          if (actions[s].size() != baseline[s].size()) throw std::runtime_error("Output size differs");
-          for (size_t j = 0; j < actions[s].size(); ++j) {
-            const double diff = std::abs(static_cast<double>(actions[s][j]) - baseline[s][j]);
-            max_action = std::max(max_action, diff);
-            if (!scale.empty()) max_joint = std::max(max_joint, diff * scale[j]);
-          }
-        }
-        std::cout << config << ',' << seeds << ',' << std::setprecision(6) << max_action;
-        if (!scale.empty()) std::cout << ',' << max_joint;
+        const auto diff =
+            policy_benchmark::compare_outputs(baseline, run_seeds(options, model, seeds), scale);
+        std::cout << config << ',' << seeds << ',' << std::setprecision(6) << diff.max_action_diff;
+        if (!scale.empty()) std::cout << ',' << diff.max_joint_target_diff;
         std::cout << '\n';
       } catch (const std::exception& error) {
         ++failures;

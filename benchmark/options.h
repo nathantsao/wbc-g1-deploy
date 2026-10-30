@@ -26,5 +26,7 @@ struct Options {
 };
 
 Options parse_options(int argc, char** argv);
+// Parses a non-negative decimal integer made only of digits; throws "Invalid value for OPTION".
+size_t parse_count(const std::string& value, const std::string& option);
 
 }  // namespace policy_benchmark

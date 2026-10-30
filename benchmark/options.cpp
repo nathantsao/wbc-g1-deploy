@@ -27,6 +27,15 @@ void print_usage(const char* program) {
             << "  --help               Show this help\n";
 }
 
+bool is_openvino_device(const std::string& device) {
+  if (device == "CPU" || device == "GPU" || device == "NPU") return true;
+  return device.size() > 4 && device.compare(0, 4, "GPU.") == 0 &&
+         std::all_of(device.begin() + 4, device.end(),
+                     [](unsigned char c) { return std::isdigit(c); });
+}
+
+}  // namespace
+
 size_t parse_count(const std::string& value, const std::string& option) {
   if (value.empty() || !std::all_of(value.begin(), value.end(),
                                   [](unsigned char c) { return std::isdigit(c); })) {
@@ -43,15 +52,6 @@ size_t parse_count(const std::string& value, const std::string& option) {
   }
   return static_cast<size_t>(parsed);
 }
-
-bool is_openvino_device(const std::string& device) {
-  if (device == "CPU" || device == "GPU" || device == "NPU") return true;
-  return device.size() > 4 && device.compare(0, 4, "GPU.") == 0 &&
-         std::all_of(device.begin() + 4, device.end(),
-                     [](unsigned char c) { return std::isdigit(c); });
-}
-
-}  // namespace
 
 Options parse_options(int argc, char** argv) {
   Options options;
