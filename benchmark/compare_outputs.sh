@@ -12,7 +12,7 @@
 #   CONFIGS  runtime:device pairs to compare [openvino:CPU openvino:GPU openvino:NPU]
 #   SEEDS    number of seeded inputs [200]
 #   OUT      output directory, must not hold an earlier comparison
-#            [build/benchmark/output_diff/<timestamp>]
+#            [new build/benchmark/output_diff/<timestamp>, or <timestamp>-2, -3, ... if it exists]
 #   BIN      output diff executable, used as is when set
 #            [build/benchmark/policy_output_diff, rebuilt before the comparison]
 #   OVEP_VERSION  OpenVINO EP plugin version installed by scripts/bootstrap_thirdparty_intel.sh [1.8.1]
@@ -35,7 +35,8 @@ fi
 # ONNX Runtime resolves a relative plugin path from its own lib directory, not the working directory.
 EP_LIB="${EP_LIB:+$(realpath -s "${EP_LIB}")}"
 [[ -z "${EP_LIB}" && -f "${DEFAULT_EP_LIB}" ]] && EP_LIB="${DEFAULT_EP_LIB}"
-OUT="${OUT:-${ROOT}/build/benchmark/output_diff/$(date +%Y%m%d-%H%M%S)}"
+# Without OUT, a new directory under build/benchmark/output_diff is made just before the comparison.
+OUT="${OUT:-}"
 CONFIGS="${CONFIGS:-openvino:CPU openvino:GPU openvino:NPU}"
 SEEDS="${SEEDS:-200}"
 
@@ -60,11 +61,15 @@ print(",".join(repr(float(s)) for s in action["scale"]))
 EOF
 )"
 
-if [[ -e "${OUT}/output_diff.csv" ]]; then
-  echo "${OUT} already has a comparison. Set OUT to a new directory." >&2
-  exit 1
+if [[ -n "${OUT}" ]]; then
+  if [[ -e "${OUT}/output_diff.csv" ]]; then
+    echo "${OUT} already has a comparison. Set OUT to a new directory." >&2
+    exit 1
+  fi
+  mkdir -p "${OUT}"
+else
+  OUT="$(make_out_dir "${ROOT}/build/benchmark/output_diff")"
 fi
-mkdir -p "${OUT}"
 
 args=(--model "$1/policy.onnx" --seeds "${SEEDS}" --action-scale "${scale}")
 [[ -n "${EP_LIB}" ]] && args+=(--provider-library "${EP_LIB}")

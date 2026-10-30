@@ -13,6 +13,30 @@ build_default_bin() {
   cmake --build "${build_dir}" --target "$2" --parallel >&2
 }
 
+# make_out_dir BASE creates a new directory BASE/<timestamp> and prints its path. If that name is
+# taken, for example by an earlier call in the same second, it adds -2, -3, ... to the name.
+make_out_dir() {
+  mkdir -p "$1"
+  # os.mkdir fails if the directory exists, so two calls never get the same directory. The mkdir
+  # command cannot be used for this. uutils mkdir 0.10.0 (the default on Ubuntu 26.04) can report
+  # success to two calls that create the same directory at the same time.
+  python3 - "$1/$(date +%Y%m%d-%H%M%S)" <<'EOF'
+import os, sys
+base = sys.argv[1]
+path, n = base, 1
+while True:
+    try:
+        os.mkdir(path)
+        break
+    except FileExistsError:
+        n += 1
+        path = f"{base}-{n}"
+    except OSError as error:
+        sys.exit(f"Cannot create {path}: {error.strerror}")
+print(path)
+EOF
+}
+
 # print_provenance ROOT EP_LIB prints the code, plugin, and driver versions that a result depends
 # on, as key=value lines for environment.txt.
 print_provenance() {

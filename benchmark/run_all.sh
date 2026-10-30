@@ -21,7 +21,8 @@
 #   REPEATS     number of rounds [3]
 #   WARMUP      warm-up calls per run [500]
 #   ITERATIONS  measured calls per run [20000]
-#   OUT         output directory, must not hold earlier runs [build/benchmark/results/<timestamp>]
+#   OUT         output directory, must not hold earlier runs
+#               [new build/benchmark/results/<timestamp>, or <timestamp>-2, -3, ... if it exists]
 #   BIN         benchmark executable, used as is when set
 #               [build/benchmark/onnx_policy_cpu_benchmark, rebuilt before the runs]
 #   ORDER_SEED  seed for the configuration order of each round [random]
@@ -46,7 +47,8 @@ fi
 # ONNX Runtime resolves a relative plugin path from its own lib directory, not the working directory.
 EP_LIB="${EP_LIB:+$(realpath -s "${EP_LIB}")}"
 [[ -z "${EP_LIB}" && -f "${DEFAULT_EP_LIB}" ]] && EP_LIB="${DEFAULT_EP_LIB}"
-OUT="${OUT:-${ROOT}/build/benchmark/results/$(date +%Y%m%d-%H%M%S)}"
+# Without OUT, a new directory under build/benchmark/results is made just before the runs.
+OUT="${OUT:-}"
 REPEATS="${REPEATS:-3}"
 WARMUP="${WARMUP:-500}"
 ITERATIONS="${ITERATIONS:-20000}"
@@ -83,7 +85,8 @@ if [[ ${#configs[@]} -eq 0 ]]; then
 fi
 
 # Old runs in a reused OUT would be mixed into the summary.
-if compgen -G "${OUT}/*_round*.txt" > /dev/null || [[ -e "${OUT}/exit_codes.txt" ]]; then
+if [[ -n "${OUT}" ]] &&
+   { compgen -G "${OUT}/*_round*.txt" > /dev/null || [[ -e "${OUT}/exit_codes.txt" ]]; }; then
   echo "${OUT} already has benchmark runs. Set OUT to a new directory." >&2
   exit 1
 fi
@@ -93,7 +96,11 @@ if [[ ! -x "${BIN}" ]]; then
   echo "Benchmark binary not found: ${BIN}" >&2
   exit 1
 fi
-mkdir -p "${OUT}"
+if [[ -n "${OUT}" ]]; then
+  mkdir -p "${OUT}"
+else
+  OUT="$(make_out_dir "${ROOT}/build/benchmark/results")"
+fi
 
 # Each round runs the configs in a new random order. A fixed order, or a rotated one, would give
 # each config the same position or the same previous config in every round, and the median
