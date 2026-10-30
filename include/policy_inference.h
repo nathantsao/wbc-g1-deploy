@@ -11,10 +11,11 @@ namespace wbc_deploy {
 
 /// Policy inference settings from the ``inference:`` block of ``config/config.yaml``.
 struct InferenceConfig {
-  std::string runtime = "onnxruntime";  ///< onnxruntime | openvino
+  std::string runtime = "onnxruntime";  ///< onnxruntime | openvino | openvino-ep
   std::string device = "CPU";           ///< CPU | GPU | GPU.N | NPU (onnxruntime: CPU only)
   int threads = 0;                      ///< CPU inference threads; 0 = runtime default
   std::string cache_dir;                ///< OpenVINO compiled-model cache; empty = disabled
+  std::string openvino_ep_library;      ///< OpenVINO EP plugin (.so) for openvino-ep
 };
 
 /// Read the root ``inference:`` block; keys in the FSM state's own ``inference:`` block override it.

@@ -34,6 +34,11 @@ endif()
 option(WBC_ENABLE_OPENVINO "Build the OpenVINO policy inference runtime (Intel CPU/GPU/NPU)" OFF)
 set(OPENVINO_VERSION "2026.4.1" CACHE STRING
   "OpenVINO version installed under thirdparty/ by scripts/bootstrap_thirdparty_intel.sh")
+set(OVEP_VERSION "1.8.1" CACHE STRING
+  "OpenVINO EP plugin version installed under thirdparty/ by scripts/bootstrap_thirdparty_intel.sh")
+set(OPENVINO_EP_LIBRARY
+  "${REPO_ROOT}/thirdparty/onnxruntime-ep-openvino-${OVEP_VERSION}-install/Release/lib/libonnxruntime_providers_openvino_plugin.so"
+  CACHE FILEPATH "Default OpenVINO EP plugin for inference.runtime openvino-ep")
 
 if(WBC_ENABLE_OPENVINO)
   find_package(OpenVINO REQUIRED COMPONENTS Runtime ONNX
@@ -77,6 +82,8 @@ set(WBC_LIB_SRC
 )
 
 add_library(${PROJECT_NAME}_lib ${WBC_LIB_SRC})
+target_compile_definitions(${PROJECT_NAME}_lib PRIVATE
+  WBC_DEFAULT_OPENVINO_EP_LIBRARY="${OPENVINO_EP_LIBRARY}")
 if(WBC_ENABLE_OPENVINO)
   target_compile_definitions(${PROJECT_NAME}_lib PRIVATE WBC_WITH_OPENVINO)
   target_link_libraries(${PROJECT_NAME}_lib PUBLIC openvino::runtime)

@@ -17,6 +17,10 @@
 #include <system_error>
 #include <utility>
 
+#ifndef WBC_DEFAULT_OPENVINO_EP_LIBRARY
+#define WBC_DEFAULT_OPENVINO_EP_LIBRARY ""
+#endif
+
 namespace wbc_deploy {
 namespace {
 
@@ -79,8 +83,8 @@ std::unique_ptr<isaaclab::Algorithms> create_runner(
 {
   if (config.runtime == "onnxruntime") {
     if (config.device != "CPU") {
-      throw std::runtime_error("runtime onnxruntime supports only device CPU; use openvino for "
-        + config.device);
+      throw std::runtime_error("runtime onnxruntime supports only device CPU; use openvino or "
+        "openvino-ep for " + config.device);
     }
     description = "ONNX Runtime CPU";
     if (config.threads <= 0) {
@@ -107,6 +111,24 @@ std::unique_ptr<isaaclab::Algorithms> create_runner(
 #endif
   }
 
+  if (config.runtime == "openvino-ep") {
+    if (config.openvino_ep_library.empty()) {
+      throw std::runtime_error("no OpenVINO EP plugin configured; set inference.openvino_ep_library");
+    }
+    if (!std::filesystem::exists(config.openvino_ep_library)) {
+      throw std::runtime_error("OpenVINO EP plugin not found: " + config.openvino_ep_library
+        + " (run scripts/bootstrap_thirdparty_intel.sh or set inference.openvino_ep_library)");
+    }
+    isaaclab::OrtRunnerOptions options;
+    options.threads = config.threads;
+    options.openvino_ep_library = config.openvino_ep_library;
+    options.openvino_device = config.device;
+    options.cache_dir = config.cache_dir;
+    auto runner = std::make_unique<isaaclab::OrtRunner>(model_path.string(), options);
+    description = "ONNX Runtime + OpenVINO EP " + runner->openvino_device();
+    return runner;
+  }
+
   throw std::runtime_error("unknown runtime " + config.runtime);
 }
 
@@ -121,9 +143,10 @@ InferenceConfig load_inference_config(const YAML::Node& root, const YAML::Node& 
   if (const auto node = lookup(state_block, root_block, "runtime")) {
     config.runtime = to_lower(node->as<std::string>());
   }
-  if (config.runtime != "onnxruntime" && config.runtime != "openvino") {
+  if (config.runtime != "onnxruntime" && config.runtime != "openvino"
+      && config.runtime != "openvino-ep") {
     throw std::runtime_error("inference.runtime '" + config.runtime
-      + "' is invalid; use onnxruntime or openvino");
+      + "' is invalid; use onnxruntime, openvino, or openvino-ep");
   }
 
   if (const auto node = lookup(state_block, root_block, "device")) {
@@ -145,6 +168,11 @@ InferenceConfig load_inference_config(const YAML::Node& root, const YAML::Node& 
     config.cache_dir = resolve_optional_path(node->IsNull() ? "" : node->as<std::string>());
   } else {
     config.cache_dir = default_cache_dir();
+  }
+
+  config.openvino_ep_library = WBC_DEFAULT_OPENVINO_EP_LIBRARY;
+  if (const auto node = lookup(state_block, root_block, "openvino_ep_library")) {
+    config.openvino_ep_library = resolve_optional_path(node->as<std::string>());
   }
   return config;
 }
