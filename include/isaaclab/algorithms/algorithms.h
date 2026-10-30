@@ -4,8 +4,13 @@
 #pragma once
 
 #include "onnxruntime_cxx_api.h"
+#include <algorithm>
 #include <iostream>
 #include <mutex>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace isaaclab
 {
@@ -26,6 +31,31 @@ public:
 protected:
     std::mutex act_mtx_;
 };
+
+// OpenVINO may enumerate the first GPU as either GPU or GPU.0.
+inline std::string resolve_inference_device(
+    const std::string& requested, const std::vector<std::string>& available)
+{
+    if (std::find(available.begin(), available.end(), requested) != available.end()) {
+        return requested;
+    }
+    if (requested == "GPU"
+        && std::find(available.begin(), available.end(), "GPU.0") != available.end()) {
+        return "GPU.0";
+    }
+    if (requested == "GPU.0"
+        && std::find(available.begin(), available.end(), "GPU") != available.end()) {
+        return "GPU";
+    }
+    std::string message = "Requested inference device " + requested + " is unavailable; available devices:";
+    for (const auto& name : available) {
+        message += " " + name;
+    }
+    if (available.empty()) {
+        message += " (none)";
+    }
+    throw std::runtime_error(message);
+}
 
 struct OrtRunnerOptions
 {

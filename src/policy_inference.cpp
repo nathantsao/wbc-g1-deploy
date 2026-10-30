@@ -1,12 +1,20 @@
 #include "policy_inference.h"
 
+#include "param.h"
+
+#ifdef WBC_WITH_OPENVINO
+#include "isaaclab/algorithms/openvino_runner.h"
+#endif
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 
 namespace wbc_deploy {
@@ -50,12 +58,29 @@ std::string to_upper(std::string text)
   return text;
 }
 
+std::string default_cache_dir()
+{
+  if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) {
+    return (std::filesystem::path(xdg) / "wbc_g1_deploy" / "openvino").string();
+  }
+  if (const char* home = std::getenv("HOME"); home && *home) {
+    return (std::filesystem::path(home) / ".cache" / "wbc_g1_deploy" / "openvino").string();
+  }
+  return "";
+}
+
+std::string resolve_optional_path(const std::string& path)
+{
+  return path.empty() ? path : param::resolve_path_under_proj(path).string();
+}
+
 std::unique_ptr<isaaclab::Algorithms> create_runner(
   const std::filesystem::path& model_path, const InferenceConfig& config, std::string& description)
 {
   if (config.runtime == "onnxruntime") {
     if (config.device != "CPU") {
-      throw std::runtime_error("runtime onnxruntime supports only device CPU");
+      throw std::runtime_error("runtime onnxruntime supports only device CPU; use openvino for "
+        + config.device);
     }
     description = "ONNX Runtime CPU";
     if (config.threads <= 0) {
@@ -64,6 +89,22 @@ std::unique_ptr<isaaclab::Algorithms> create_runner(
     isaaclab::OrtRunnerOptions options;
     options.threads = config.threads;
     return std::make_unique<isaaclab::OrtRunner>(model_path.string(), options);
+  }
+
+  if (config.runtime == "openvino") {
+#ifdef WBC_WITH_OPENVINO
+    isaaclab::OpenVinoRunnerOptions options;
+    options.device = config.device;
+    options.threads = config.threads;
+    options.cache_dir = config.cache_dir;
+    auto runner = std::make_unique<isaaclab::OpenVinoRunner>(model_path.string(), options);
+    description = "OpenVINO " + runner->device() + " (" + runner->device_full_name() + ", "
+      + runner->inference_precision() + ")";
+    return runner;
+#else
+    throw std::runtime_error("this build has no OpenVINO runtime; reconfigure with "
+      "-DWBC_ENABLE_OPENVINO=ON");
+#endif
   }
 
   throw std::runtime_error("unknown runtime " + config.runtime);
@@ -80,16 +121,16 @@ InferenceConfig load_inference_config(const YAML::Node& root, const YAML::Node& 
   if (const auto node = lookup(state_block, root_block, "runtime")) {
     config.runtime = to_lower(node->as<std::string>());
   }
-  if (config.runtime != "onnxruntime") {
+  if (config.runtime != "onnxruntime" && config.runtime != "openvino") {
     throw std::runtime_error("inference.runtime '" + config.runtime
-      + "' is invalid; use onnxruntime");
+      + "' is invalid; use onnxruntime or openvino");
   }
 
   if (const auto node = lookup(state_block, root_block, "device")) {
     config.device = to_upper(node->as<std::string>());
   }
   if (config.device.empty()) {
-    throw std::runtime_error("inference.device must not be empty");
+    throw std::runtime_error("inference.device must not be empty; use CPU, GPU, or NPU");
   }
 
   if (const auto node = lookup(state_block, root_block, "threads")) {
@@ -98,12 +139,25 @@ InferenceConfig load_inference_config(const YAML::Node& root, const YAML::Node& 
   if (config.threads < 0) {
     throw std::runtime_error("inference.threads must be 0 (runtime default) or positive");
   }
+
+  // An absent key uses the default cache; an explicit empty string disables caching.
+  if (const auto node = lookup(state_block, root_block, "cache_dir")) {
+    config.cache_dir = resolve_optional_path(node->IsNull() ? "" : node->as<std::string>());
+  } else {
+    config.cache_dir = default_cache_dir();
+  }
   return config;
 }
 
 std::unique_ptr<isaaclab::Algorithms> make_policy_runner(
   const std::filesystem::path& model_path, const InferenceConfig& config, const std::string& label)
 {
+  const bool uses_openvino = config.runtime != "onnxruntime";
+  if (uses_openvino && !config.cache_dir.empty()) {
+    std::error_code ignored;
+    std::filesystem::create_directories(config.cache_dir, ignored);
+  }
+
   const auto start = std::chrono::steady_clock::now();
   std::unique_ptr<isaaclab::Algorithms> runner;
   std::string description;
@@ -118,8 +172,9 @@ std::unique_ptr<isaaclab::Algorithms> make_policy_runner(
   const auto load_ms = std::chrono::duration<double, std::milli>(
     std::chrono::steady_clock::now() - start).count();
 
-  spdlog::info("{}: policy inference on {} (threads {}), loaded in {:.0f} ms",
-    label, description, config.threads > 0 ? std::to_string(config.threads) : "default", load_ms);
+  spdlog::info("{}: policy inference on {} (threads {}, cache {}), loaded in {:.0f} ms",
+    label, description, config.threads > 0 ? std::to_string(config.threads) : "default",
+    uses_openvino && !config.cache_dir.empty() ? config.cache_dir : "off", load_ms);
   return runner;
 }
 

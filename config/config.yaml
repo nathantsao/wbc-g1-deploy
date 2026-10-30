@@ -6,8 +6,8 @@ clips_manifest: manifest.yaml
 # Policy inference runtime and device.
 # An FSM state may override any key with its own `inference:` block.
 inference:
-  runtime: onnxruntime
-  device: CPU
+  runtime: onnxruntime   # onnxruntime | openvino (needs -DWBC_ENABLE_OPENVINO=ON)
+  device: CPU            # CPU | GPU | NPU (onnxruntime: CPU only)
 
 FSM:
   _:

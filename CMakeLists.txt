@@ -30,6 +30,17 @@ if(NOT EXISTS "${ONNXRUNTIME_DIR}/include/onnxruntime_c_api.h")
     "Run: scripts/bootstrap_thirdparty.sh")
 endif()
 
+# Optional policy inference runtimes (config.yaml `inference:`). ONNX Runtime on CPU is always built.
+option(WBC_ENABLE_OPENVINO "Build the OpenVINO policy inference runtime (Intel CPU/GPU/NPU)" OFF)
+set(OPENVINO_VERSION "2026.4.1" CACHE STRING
+  "OpenVINO version installed under thirdparty/ by scripts/bootstrap_thirdparty_intel.sh")
+
+if(WBC_ENABLE_OPENVINO)
+  find_package(OpenVINO REQUIRED COMPONENTS Runtime ONNX
+    HINTS "${REPO_ROOT}/thirdparty/openvino-${OPENVINO_VERSION}/runtime/cmake")
+  message(STATUS "OpenVINO policy inference enabled (OpenVINO ${OpenVINO_VERSION})")
+endif()
+
 include_directories(
   /usr/include/eigen3
   ${REPO_ROOT}/include
@@ -66,6 +77,10 @@ set(WBC_LIB_SRC
 )
 
 add_library(${PROJECT_NAME}_lib ${WBC_LIB_SRC})
+if(WBC_ENABLE_OPENVINO)
+  target_compile_definitions(${PROJECT_NAME}_lib PRIVATE WBC_WITH_OPENVINO)
+  target_link_libraries(${PROJECT_NAME}_lib PUBLIC openvino::runtime)
+endif()
 link_libraries(${PROJECT_NAME}_lib)
 
 add_subdirectory(apps)
