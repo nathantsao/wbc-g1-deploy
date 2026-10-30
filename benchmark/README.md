@@ -1,6 +1,12 @@
 # Policy inference benchmark
 
-This standalone C++ harness benchmarks the active ONNX policy using ONNX Runtime, direct OpenVINO Runtime, or the ONNX Runtime OpenVINO Execution Provider (EP) plugin. CPU is the default device. OpenVINO supports explicit CPU, Intel GPU, and Intel NPU selection; native ONNX Runtime also supports NVIDIA GPUs through its CUDA provider. All backends use the same deterministic synthetic input tensors, warm-up count, and metric collection. ONNX Runtime uses the same `ORT_ENABLE_EXTENDED` graph optimization setting as `OrtRunner`.
+This standalone C++ program measures how long the policy's ONNX model takes to run one inference. It supports three runtimes:
+
+- **ONNX Runtime**, the runtime the controller's `OrtRunner` uses.
+- **OpenVINO Runtime**, called directly.
+- **OpenVINO EP**: ONNX Runtime with the OpenVINO Execution Provider (EP) plugin.
+
+The default device is CPU. OpenVINO can also run on an Intel GPU or NPU, and ONNX Runtime can run on an NVIDIA GPU through its CUDA provider. To make the results comparable, all runtimes get the same synthetic inputs, the same number of warm-up calls, and the same metrics. ONNX Runtime uses the same graph optimization level (`ORT_ENABLE_EXTENDED`) as `OrtRunner`.
 
 Contents:
 
@@ -18,11 +24,11 @@ Contents:
 
 Measured on an Intel Core Ultra X7 358H. See [Results: Intel Core Ultra X7 358H](#results-intel-core-ultra-x7-358h) for the test machine, full tables, and all findings.
 
-- All configs meet the 20 ms policy period. None of the 4.8 million measured calls took longer than 20 ms. The slowest took 3.2 ms, and p99 is at most 121 µs.
-- CPU is fastest for these small models. GPU and NPU are about 2–5× slower (p50). NPU uses the least host CPU (about 0.17–0.19 core).
-- With the same thread count, the faster CPU runtime depends on the model. At 2 or 4 threads, OpenVINO is about 22–25% faster on wbc and ONNX Runtime is about 12–21% faster on velocity. On karate they are within 10% of each other.
-- ONNX Runtime uses 12–16 cores by default but is at most about 2.4 µs faster than with 4 threads. It also had 151 of the 156 calls over 2 ms. Consider limiting its thread count on the robot.
-- GPU and NPU use FP16 by default. Their actions differ from ONNX Runtime CPU by up to 0.059 (0.026 rad joint target). Test them in closed loop before using them on the robot.
+- Every configuration meets the 20 ms policy period. None of the 4.8 million measured calls took longer than 20 ms. The slowest call took 3.2 ms, and p99 is at most 121 µs.
+- CPU is the fastest option for these small models. GPU and NPU are about 2–5× slower (p50). The NPU needs the least host CPU (about 0.17–0.19 core).
+- With the same thread count, which CPU runtime is faster depends on the model. At 2 or 4 threads, OpenVINO is about 22–25% faster on wbc, and ONNX Runtime is about 12–21% faster on velocity. On karate the two are within 10% of each other.
+- By default, ONNX Runtime runs on 12–16 cores, but it is at most about 2.4 µs faster than with 4 threads. It also had 151 of the 156 calls over 2 ms. Consider limiting its thread count on the robot.
+- GPU and NPU run in FP16 by default. Their actions differ from ONNX Runtime CPU by up to 0.059 (0.026 rad for the joint target). Test them in closed loop before using them on the robot.
 
 ## Setup
 
@@ -230,47 +236,97 @@ Inputs are synthetic float32 values. Latency is one call: input copy, inference,
 
 ### Default settings
 
-Each runtime uses its default threads and precision. p50, p99, init, and CPU are the median of the 5 runs. Max is the slowest single call over all 5 runs (100000 calls). CPU is host process CPU usage, where 100% is one core.
+Each runtime uses its default threads and precision. p50, p99, init, and CPU are the median of the 5 runs. Max is the slowest single call over all 5 runs (100000 calls). CPU is host process CPU usage, where 100% is one core. Memory is the resident memory (RSS) of the whole benchmark process after the measured calls. It includes the runtime libraries and the model. It is not device memory.
 
-| Model | Runtime | Device | p50 (µs) | p99 (µs) | Max (µs) | Init (ms) | CPU (%) |
-|---|---|---|---|---|---|---|---|
-| karate | ONNX Runtime | CPU | **20.7** | 22.2 | 348.0 | 3.0 | 1395 |
-| | OpenVINO | CPU | 22.7 | 24.6 | 1230.3 | 44.4 | 400 |
-| | OpenVINO | GPU | 46.7 | 48.7 | 1214.8 | 83.4 | 100 |
-| | OpenVINO | NPU | 72.9 | 120.5 | 462.2 | 137.9 | **16** |
-| | OpenVINO EP | CPU | 23.7 | 58.1 | 326.5 | 65.5 | 864 |
-| | OpenVINO EP | GPU | 47.4 | 51.8 | 1112.3 | 156.4 | 330 |
-| | OpenVINO EP | NPU | 71.3 | 114.5 | 1232.7 | 150.3 | 137 |
-| wbc | ONNX Runtime | CPU | 27.1 | 29.6 | 3053.3 | 14.0 | 1254 |
-| | OpenVINO | CPU | **22.9** | 24.6 | 126.6 | 39.4 | 400 |
-| | OpenVINO | GPU | 46.7 | 55.6 | 1232.3 | 75.3 | 100 |
-| | OpenVINO | NPU | 72.9 | 119.0 | 1245.2 | 138.3 | **17** |
-| | OpenVINO EP | CPU | 23.5 | 57.7 | 360.0 | 87.9 | 849 |
-| | OpenVINO EP | GPU | 47.6 | 51.4 | 1219.7 | 140.8 | 355 |
-| | OpenVINO EP | NPU | 71.6 | 112.8 | 2050.7 | 163.7 | 119 |
-| velocity | ONNX Runtime | CPU | **10.7** | 16.7 | 3051.8 | 1.6 | 1588 |
-| | OpenVINO | CPU | 13.7 | 14.9 | 1184.1 | 43.6 | 400 |
-| | OpenVINO | GPU | 34.3 | 36.7 | 1051.8 | 81.0 | 100 |
-| | OpenVINO | NPU | 56.6 | 98.0 | 318.3 | 133.0 | **19** |
-| | OpenVINO EP | CPU | 18.0 | 19.1 | 118.9 | 60.5 | 1326 |
-| | OpenVINO EP | GPU | 35.0 | 41.6 | 1210.1 | 112.4 | 506 |
-| | OpenVINO EP | NPU | 55.7 | 99.3 | 3184.4 | 139.1 | 199 |
+| Model | Runtime | Device | p50 (µs) | p99 (µs) | Max (µs) | Init (ms) | CPU (%) | Memory (MiB) |
+|---|---|---|---|---|---|---|---|---|
+| karate | ONNX Runtime | CPU | **20.7** | 22.2 | 348.0 | 3.0 | 1395 | **43** |
+| | OpenVINO | CPU | 22.7 | 24.6 | 1230.3 | 44.4 | 400 | 151 |
+| | OpenVINO | GPU | 46.7 | 48.7 | 1214.8 | 83.4 | 100 | 155 |
+| | OpenVINO | NPU | 72.9 | 120.5 | 462.2 | 137.9 | **16** | 236 |
+| | OpenVINO EP | CPU | 23.7 | 58.1 | 326.5 | 65.5 | 864 | 160 |
+| | OpenVINO EP | GPU | 47.4 | 51.8 | 1112.3 | 156.4 | 330 | 160 |
+| | OpenVINO EP | NPU | 71.3 | 114.5 | 1232.7 | 150.3 | 137 | 240 |
+| wbc | ONNX Runtime | CPU | 27.1 | 29.6 | 3053.3 | 14.0 | 1254 | **54** |
+| | OpenVINO | CPU | **22.9** | 24.6 | 126.6 | 39.4 | 400 | 158 |
+| | OpenVINO | GPU | 46.7 | 55.6 | 1232.3 | 75.3 | 100 | 159 |
+| | OpenVINO | NPU | 72.9 | 119.0 | 1245.2 | 138.3 | **17** | 246 |
+| | OpenVINO EP | CPU | 23.5 | 57.7 | 360.0 | 87.9 | 849 | 174 |
+| | OpenVINO EP | GPU | 47.6 | 51.4 | 1219.7 | 140.8 | 355 | 175 |
+| | OpenVINO EP | NPU | 71.6 | 112.8 | 2050.7 | 163.7 | 119 | 257 |
+| velocity | ONNX Runtime | CPU | **10.7** | 16.7 | 3051.8 | 1.6 | 1588 | **38** |
+| | OpenVINO | CPU | 13.7 | 14.9 | 1184.1 | 43.6 | 400 | 146 |
+| | OpenVINO | GPU | 34.3 | 36.7 | 1051.8 | 81.0 | 100 | 152 |
+| | OpenVINO | NPU | 56.6 | 98.0 | 318.3 | 133.0 | **19** | 230 |
+| | OpenVINO EP | CPU | 18.0 | 19.1 | 118.9 | 60.5 | 1326 | 153 |
+| | OpenVINO EP | GPU | 35.0 | 41.6 | 1210.1 | 112.4 | 506 | 158 |
+| | OpenVINO EP | NPU | 55.7 | 99.3 | 3184.4 | 139.1 | 199 | 235 |
+
+#### More metrics for the default settings
+
+Same runs as the table above (median of the 5 runs). Mean latency is higher than p50 when a few slow calls pull the average up, for example OpenVINO EP on CPU for karate and wbc. Throughput is calls per second when the calls run back to back, so it is roughly 1 / mean latency. The robot calls the policy every 20 ms, which is 50 calls per second. Speed vs ONNX Runtime CPU is the p50 of ONNX Runtime CPU divided by the p50 of that row. Above 1.00x is faster than ONNX Runtime CPU, and below 1.00x is slower.
+
+| Model | Runtime | Device | Mean (µs) | Throughput (calls/s) | Speed vs ONNX Runtime CPU |
+|---|---|---|---|---|---|
+| karate | ONNX Runtime | CPU | 20.7 | 48,140 | 1.00x |
+| | OpenVINO | CPU | 22.8 | 43,797 | 0.91x |
+| | OpenVINO | GPU | 46.9 | 21,307 | 0.44x |
+| | OpenVINO | NPU | 73.6 | 13,586 | 0.28x |
+| | OpenVINO EP | CPU | 30.5 | 32,788 | 0.87x |
+| | OpenVINO EP | GPU | 48.1 | 20,771 | 0.44x |
+| | OpenVINO EP | NPU | 72.4 | 13,806 | 0.29x |
+| wbc | ONNX Runtime | CPU | 27.5 | 36,301 | 1.00x |
+| | OpenVINO | CPU | 23.0 | 43,456 | 1.19x |
+| | OpenVINO | GPU | 47.1 | 21,224 | 0.58x |
+| | OpenVINO | NPU | 73.7 | 13,564 | 0.37x |
+| | OpenVINO EP | CPU | 30.0 | 33,290 | 1.15x |
+| | OpenVINO EP | GPU | 48.2 | 20,723 | 0.57x |
+| | OpenVINO EP | NPU | 72.8 | 13,725 | 0.38x |
+| velocity | ONNX Runtime | CPU | 11.6 | 86,233 | 1.00x |
+| | OpenVINO | CPU | 13.7 | 72,786 | 0.78x |
+| | OpenVINO | GPU | 34.6 | 28,849 | 0.31x |
+| | OpenVINO | NPU | 59.4 | 16,814 | 0.19x |
+| | OpenVINO EP | CPU | 17.2 | 58,071 | 0.60x |
+| | OpenVINO EP | GPU | 36.3 | 27,555 | 0.31x |
+| | OpenVINO EP | NPU | 58.7 | 17,025 | 0.19x |
 
 ### Same CPU thread count (`--threads N`)
 
-p50 latency, median of the 5 runs. The OpenVINO EP used more cores than the thread count: 244–290% CPU at `--threads 2` and 566–687% at `--threads 4`. The likely reason is that ONNX Runtime and OpenVINO each run their own thread pool. `--threads` does not choose between P-cores and E-cores.
+All runs are on CPU. p50 and p99 are the median of the 5 runs. Max is the slowest single call over all 5 runs (100000 calls). The best p50 in each model and thread count is in bold.
 
-| Model | Threads | ONNX Runtime p50 (µs) | OpenVINO p50 (µs) | OpenVINO EP p50 (µs) |
-|---|---|---|---|---|
-| karate | 1 | **46.5** | 51.3 | 54.3 |
-| | 2 | 29.4 | **27.9** | 29.4 |
-| | 4 | 23.1 | **22.3** | 23.3 |
-| wbc | 1 | 52.8 | **51.3** | 54.1 |
-| | 2 | 35.8 | **28.0** | 29.3 |
-| | 4 | 29.5 | **22.2** | 23.3 |
-| velocity | 1 | **13.2** | 14.6 | 15.1 |
-| | 2 | **12.0** | 13.7 | 15.3 |
-| | 4 | **10.8** | 13.7 | 14.4 |
+The OpenVINO EP used more cores than the thread count: 244–290% CPU at `--threads 2` and 566–687% at `--threads 4`. The likely reason is that ONNX Runtime and OpenVINO each have their own thread pool. `--threads` does not choose between P-cores and E-cores.
+
+| Model | Threads | Runtime | p50 (µs) | p99 (µs) | Max (µs) |
+|---|---|---|---|---|---|
+| karate | 1 | ONNX Runtime | **46.5** | 48.4 | 1219.1 |
+| | | OpenVINO | 51.3 | 53.1 | 1225.9 |
+| | | OpenVINO EP | 54.3 | 56.2 | 1231.0 |
+| | 2 | ONNX Runtime | 29.4 | 32.6 | 1206.5 |
+| | | OpenVINO | **27.9** | 29.8 | 1230.3 |
+| | | OpenVINO EP | 29.4 | 32.2 | 1203.6 |
+| | 4 | ONNX Runtime | 23.1 | 26.1 | 1198.9 |
+| | | OpenVINO | **22.3** | 24.1 | 1232.7 |
+| | | OpenVINO EP | 23.3 | 25.0 | 1200.9 |
+| wbc | 1 | ONNX Runtime | 52.8 | 55.3 | 1225.8 |
+| | | OpenVINO | **51.3** | 53.2 | 1220.8 |
+| | | OpenVINO EP | 54.1 | 56.1 | 1222.1 |
+| | 2 | ONNX Runtime | 35.8 | 38.7 | 1205.7 |
+| | | OpenVINO | **28.0** | 29.9 | 1204.6 |
+| | | OpenVINO EP | 29.3 | 32.4 | 1237.8 |
+| | 4 | ONNX Runtime | 29.5 | 32.3 | 1200.6 |
+| | | OpenVINO | **22.2** | 23.9 | 1220.9 |
+| | | OpenVINO EP | 23.3 | 25.0 | 1235.7 |
+| velocity | 1 | ONNX Runtime | **13.2** | 14.3 | 1184.3 |
+| | | OpenVINO | 14.6 | 15.4 | 1183.6 |
+| | | OpenVINO EP | 15.1 | 15.9 | 52.0 |
+| | 2 | ONNX Runtime | **12.0** | 13.1 | 1182.3 |
+| | | OpenVINO | 13.7 | 14.9 | 1183.6 |
+| | | OpenVINO EP | 15.3 | 16.7 | 62.5 |
+| | 4 | ONNX Runtime | **10.8** | 12.4 | 46.9 |
+| | | OpenVINO | 13.7 | 15.0 | 102.2 |
+| | | OpenVINO EP | 14.4 | 15.7 | 1193.9 |
+
+The slowest calls are all about 1.2 ms or less, so no thread count caused a call over 2 ms. Most of these maxima are the single 1.1–1.2 ms calls described in [Findings](#findings).
 
 ### Output difference from ONNX Runtime CPU
 
@@ -290,21 +346,37 @@ GPU and NPU use FP16 by default, so their outputs differ a little. Not yet check
 
 ### Findings
 
-- All configs meet the 20 ms policy period. None of the 4.8 million measured calls took longer than 20 ms (`policy_deadline_misses_total` is 0 for every config). The slowest single call was 3.2 ms (OpenVINO EP on NPU, velocity), and 4 configs had a call over 2 ms. The p99 is at most 121 µs for every config.
-- Calls over 2 ms were rare (156 of 4.8 million), and 151 of them came from ONNX Runtime with default threads. In 4 of its 15 default runs, up to 50 calls took about 3 ms each. With `--threads N`, ONNX Runtime had no call over 2 ms in its 45 runs. The cause is not confirmed. A likely reason is that by default it pins a thread to every core, so one core that is busy with another process delays the whole call. Single slow calls of about 1.1–1.2 ms occur with every runtime and device, so they likely come from the system rather than the runtime.
-- CPU is fastest for these small models. GPU and NPU are about 2–5× slower than the fastest CPU runtime (p50). The cause (for example transfer overhead) was not measured and is unverified.
-- With the same thread count, the faster CPU runtime depends on the model. "x% faster" means 1 - fast/slow using p50 latency. For example 22% faster means the faster runtime takes 78% of the time.
+**Latency and the 20 ms period**
+
+- Every configuration meets the 20 ms policy period. None of the 4.8 million measured calls took longer than 20 ms (`policy_deadline_misses_total` is 0 for every configuration). The p99 is at most 121 µs.
+- The slowest call took 3.2 ms (OpenVINO EP on NPU, velocity). Only 4 configurations had a call over 2 ms.
+- Calls over 2 ms were rare (156 of 4.8 million), and 151 of them came from ONNX Runtime with default threads. In 4 of its 15 default runs, up to 50 calls took about 3 ms each. With `--threads N`, ONNX Runtime had no call over 2 ms in its 45 runs.
+- The cause is not confirmed. A likely reason is that ONNX Runtime pins one thread to every core by default, so a core that is busy with another process delays the whole call.
+- Single calls of about 1.1–1.2 ms happen with every runtime and device. They most likely come from the system, not from the runtime.
+
+**CPU, GPU and NPU**
+
+- CPU is the fastest option for these small models. GPU and NPU are about 2–5× slower than the fastest CPU runtime (p50). The cause (for example transfer overhead) was not measured.
+- The NPU needs the least host CPU (about 0.17–0.19 core) at about 57–73 µs per call. It was not tested while the CPU was busy, so we do not know whether the NPU is better in that case.
+- OpenVINO EP is close to direct OpenVINO on GPU and NPU, but it starts slower and needs more host CPU.
+- ONNX Runtime on CPU uses the least memory (38–54 MiB). OpenVINO needs about 146–159 MiB on CPU and GPU and 230–246 MiB on NPU, and the EP adds roughly 4–16 MiB more.
+- GPU and NPU run in FP16, so their outputs differ a little. Test them in closed loop before using them on the robot.
+
+**ONNX Runtime and OpenVINO on CPU**
+
+- With the same thread count, which runtime is faster depends on the model. "x% faster" means `1 - fast/slow` using p50. For example, 22% faster means the faster runtime takes 78% of the time.
   - wbc: OpenVINO is about 22–25% faster at 2 or 4 threads, and about 3% faster at 1 thread.
   - velocity: ONNX Runtime is about 12–21% faster at 2 or 4 threads, and about 10% faster at 1 thread.
   - karate: ONNX Runtime is about 9% faster at 1 thread. OpenVINO is 3–5% faster at 2 or 4 threads.
+- karate and wbc have the same network structure and differ only in their weights. Still, ONNX Runtime is 6.3–6.5 µs slower on wbc at every thread count, while OpenVINO differs by at most 0.2 µs. The cause is not confirmed.
+- By default, ONNX Runtime runs on about 12–16 cores. Compared with 4 threads, this saves only about 2.4 µs for karate and wbc, and nothing for velocity (10.7 µs vs 10.8 µs).
+  - Part of this gap does not come from the thread count. By default ONNX Runtime pins one thread to each physical core, and with an explicit thread count it pins none. The two modes also run different code (`OrtRunner` and a plain session with slightly different per-call handling). We did not measure the effect of each difference.
+  - On the robot, consider limiting the thread count, which also avoided the 3 ms calls above. This needs a thread setting in the controller's `OrtRunner`, which would also remove the pinning.
+- OpenVINO EP on CPU has a high p99 with default threads for karate and wbc (about 58 µs, 2.5× its p50). The likely reason is that the ONNX Runtime and OpenVINO thread pools compete for cores. With `--threads 4`, its p99 drops to about 25 µs, and with `--threads 2` to about 32 µs.
 
-- karate and wbc have the same network structure. Only the weights differ. Still, ONNX Runtime is 6.3–6.5 µs slower on wbc at every thread setting, while OpenVINO differs by at most 0.2 µs. The cause is not confirmed yet.
-- ONNX Runtime uses about 12–16 cores by default. Compared with 4 threads, this saves only about 2.4 µs for karate and wbc, and nothing for velocity (10.7 µs vs 10.8 µs). This gap is not only from the thread count. By default ONNX Runtime pins one thread to each physical core. With an explicit thread count it pins none. The two runs also use different code (`OrtRunner` and a plain session with slightly different per-call handling). The effect of each difference was not measured. On the robot, consider limiting the thread count, which also avoided the 3 ms bursts above. This needs a thread setting in the controller's `OrtRunner`, which would also remove the pinning.
-- NPU uses the least host CPU (about 0.17–0.19 core), at about 57–73 µs per call. It was not tested under CPU load so it is unverified whether NPU is better when the CPU is busy.
-- Some results change between runs more than the median shows, and the cause is not known. For velocity on direct OpenVINO NPU, p50 was 56–57 µs in 4 runs and 67.6 µs in 1. An earlier measurement on 2026-10-28 had a median of 67.2 µs. For velocity on ONNX Runtime CPU, p99 was about 12 µs in 2 runs and about 17 µs in 3.
-- Test GPU and NPU in closed loop before using them on the robot, because of the FP16 output difference.
-- OpenVINO EP is close to direct OpenVINO on GPU and NPU, but starts slower and uses more host CPU.
-- OpenVINO EP on CPU has a high p99 with default threads for karate and wbc (about 58 µs, 2.5× its p50). This is likely because the ONNX Runtime and OpenVINO thread pools compete for cores. With `--threads 4`, its p99 drops to about 25 µs, and with `--threads 2` to about 32 µs.
+**Stability of the results**
+
+- Some results vary between runs more than the median shows, and the cause is not known. For velocity on direct OpenVINO NPU, p50 was 56–57 µs in 4 runs and 67.6 µs in 1. An earlier measurement on 2026-10-28 had a median of 67.2 µs. For velocity on ONNX Runtime CPU, p99 was about 12 µs in 2 runs and about 17 µs in 3.
 - With the `powersave` governor, results are less stable. Use `performance` for repeatable numbers.
 
 ### Reproduce
