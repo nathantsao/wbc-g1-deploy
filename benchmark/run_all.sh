@@ -2,9 +2,10 @@
 # Run the policy benchmark on ONNX Runtime CPU and OpenVINO CPU/GPU/NPU, directly and
 # through the OpenVINO EP, then print a table of medians and write summary.csv.
 #
-# A round runs every config once. A run is one benchmark execution of one config. Only runs
-# that exit with 0 are summarized; summary.csv has the median of every numeric report field, plus
-# the max latency and the total calls over 20 ms over all of those runs.
+# A round runs every config once, in a random order recorded in environment.txt. A run is
+# one benchmark execution of one config. Only runs that exit with 0 are summarized; summary.csv
+# has the median of every numeric report field, plus the max latency and the total calls over
+# 20 ms over all of those runs.
 #
 # Usage (from anywhere):
 #   benchmark/run_all.sh
@@ -23,6 +24,7 @@
 #   OUT         output directory, must not hold earlier runs [build/benchmark/results/<timestamp>]
 #   BIN         benchmark executable, used as is when set
 #               [build/benchmark/onnx_policy_cpu_benchmark, rebuilt before the runs]
+#   ORDER_SEED  seed for the configuration order of each round [random]
 #   OVEP_VERSION  OpenVINO EP plugin version installed by scripts/bootstrap_thirdparty_intel.sh [1.8.1]
 #   EP_LIB      OpenVINO EP plugin library
 #               [thirdparty/onnxruntime-ep-openvino-<OVEP_VERSION>-install/Release/lib/...]
@@ -48,7 +50,13 @@ OUT="${OUT:-${ROOT}/build/benchmark/results/$(date +%Y%m%d-%H%M%S)}"
 REPEATS="${REPEATS:-3}"
 WARMUP="${WARMUP:-500}"
 ITERATIONS="${ITERATIONS:-20000}"
+ORDER_SEED="${ORDER_SEED:-$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')}"
 DEFAULT_CONFIGS="onnx:CPU openvino:CPU openvino:GPU openvino:NPU openvino-ep:CPU openvino-ep:GPU openvino-ep:NPU"
+
+if [[ ! "${ORDER_SEED}" =~ ^[0-9]+$ ]]; then
+  echo "ORDER_SEED must be a non-negative integer: ${ORDER_SEED}" >&2
+  exit 1
+fi
 
 # These options are set for each configuration. Passing them again would mislabel the results.
 for arg in "$@"; do
@@ -87,6 +95,20 @@ if [[ ! -x "${BIN}" ]]; then
 fi
 mkdir -p "${OUT}"
 
+# Each round runs the configs in a new random order. A fixed order, or a rotated one, would give
+# each config the same position or the same previous config in every round, and the median
+# cannot remove an effect that is the same in every round. ORDER_SEED reproduces the orders.
+order_text="$(python3 - "${ORDER_SEED}" "${REPEATS}" "${configs[@]}" <<'EOF'
+import random, sys
+rng = random.Random(int(sys.argv[1]))
+for _ in range(int(sys.argv[2])):
+    order = sys.argv[3:]
+    rng.shuffle(order)
+    print(" ".join(order))
+EOF
+)"
+readarray -t orders <<< "${order_text}"
+
 # CPU power settings and the code, plugin, and driver versions change the results, so record them
 # with each result set. Runtime versions and precision are in each run's report, and the model
 # SHA-256 is added after the runs.
@@ -98,6 +120,10 @@ mkdir -p "${OUT}"
   echo "platform_profile=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unknown)"
   echo "repeats=${REPEATS} warmup=${WARMUP} iterations=${ITERATIONS} extra_args=$*"
   echo "configs=${configs[*]}"
+  echo "order_seed=${ORDER_SEED}"
+  for ((round = 1; round <= REPEATS; round++)); do
+    echo "round${round}_order=${orders[round - 1]}"
+  done
   echo "bin=${BIN}"
   echo "bin_rebuilt=${BIN_REBUILT}"
   print_provenance "${ROOT}" "${EP_LIB}"
@@ -105,7 +131,8 @@ mkdir -p "${OUT}"
 
 # Run every config once per round so CPU heat and frequency changes are spread across configs.
 for ((round = 1; round <= REPEATS; round++)); do
-  for config in "${configs[@]}"; do
+  read -ra order <<< "${orders[round - 1]}"
+  for config in "${order[@]}"; do
     runtime="${config%%:*}"
     device="${config#*:}"
     name="${runtime}_${device}_round${round}"
