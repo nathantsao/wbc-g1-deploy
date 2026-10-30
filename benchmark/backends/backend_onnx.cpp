@@ -24,7 +24,8 @@ class OnnxRuntimeBackend final : public InferenceBackend {
 public:
   explicit OnnxRuntimeBackend(const std::string& model_path)
       : runner_(std::make_unique<isaaclab::OrtRunner>(model_path)) {
-    info = {"CPU", "CPU", "ONNX Runtime default CPU provider"};
+    info = {"CPU", "CPU", "ONNX Runtime default CPU provider",
+            {{"onnxruntime_version", Ort::GetVersionString()}}};
   }
 
   std::vector<float> infer(ObservationMap observations) override {
@@ -47,7 +48,8 @@ public:
     session_options.AppendExecutionProvider_CUDA(cuda_options);
     session_ = std::make_unique<Ort::Session>(env_, options.model_path.c_str(), session_options);
     info = {"GPU." + std::to_string(options.device_id),
-            "CUDA device " + std::to_string(options.device_id), "ONNX Runtime CUDA provider"};
+            "CUDA device " + std::to_string(options.device_id), "ONNX Runtime CUDA provider",
+            {{"onnxruntime_version", Ort::GetVersionString()}}};
   }
 };
 
@@ -60,7 +62,8 @@ public:
     session_options.SetGraphOptimizationLevel(ORT_ENABLE_EXTENDED);
     session_options.SetIntraOpNumThreads(options.threads);
     session_ = std::make_unique<Ort::Session>(env_, options.model_path.c_str(), session_options);
-    info = {"CPU", "CPU", "ONNX Runtime CPU provider"};
+    info = {"CPU", "CPU", "ONNX Runtime CPU provider",
+            {{"onnxruntime_version", Ort::GetVersionString()}}};
   }
 };
 

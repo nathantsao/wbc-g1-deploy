@@ -19,6 +19,7 @@ struct LatencyStats {
 struct BenchmarkResult {
   ModelInfo model;
   BackendInfo backend;
+  PrecisionInfo precision;
   double initialization_ms = 0.0;
   double warmup_ms = 0.0;
   double wall_seconds = 0.0;

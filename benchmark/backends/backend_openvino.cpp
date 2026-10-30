@@ -21,7 +21,17 @@ public:
       throw std::runtime_error("OpenVINO benchmark requires exactly one execution device");
     }
     info = {execution_devices.front(), core_.get_property(device, ov::device::full_name),
-            "OpenVINO " + options.device + " plugin"};
+            "OpenVINO " + options.device + " plugin",
+            {{"openvino_version", ov::get_openvino_version().buildNumber}}};
+  }
+
+  PrecisionInfo inference_precision() const override {
+    try {
+      return {compiled_model_->get_property(ov::hint::inference_precision).get_type_name(),
+              "compiled_model"};
+    } catch (const std::exception&) {
+      return {"unknown", "compiled_model"};
+    }
   }
 
   std::vector<float> infer(ObservationMap observations) override {

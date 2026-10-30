@@ -39,13 +39,15 @@ std::vector<float> parse_scale(const std::string& text) {
 
 std::vector<std::vector<float>> run_seeds(const policy_benchmark::Options& options,
                                           const policy_benchmark::ModelInfo& model,
-                                          uint32_t seeds) {
+                                          uint32_t seeds,
+                                          policy_benchmark::PrecisionInfo* precision = nullptr) {
   auto backend = policy_benchmark::make_backend(options, model);
   std::vector<std::vector<float>> actions;
   actions.reserve(seeds);
   for (uint32_t seed = 1; seed <= seeds; ++seed) {
     actions.push_back(backend->infer(policy_benchmark::make_observations(model, seed)));
   }
+  if (precision) *precision = backend->inference_precision();
   return actions;
 }
 
@@ -94,7 +96,7 @@ int main(int argc, char** argv) {
     policy_benchmark::check_reference(baseline, scale);
 
     std::cout << "config,seeds,max_action_diff" << (scale.empty() ? "" : ",max_joint_target_diff_rad")
-              << '\n';
+              << ",inference_precision\n";
     int failures = 0;
     for (const auto& config : configs) {
       policy_benchmark::Options options;
@@ -112,11 +114,12 @@ int main(int argc, char** argv) {
         if (options.runtime == "openvino-ep" && provider_library.empty()) {
           throw std::runtime_error("openvino-ep requires --provider-library");
         }
-        const auto diff =
-            policy_benchmark::compare_outputs(baseline, run_seeds(options, model, seeds), scale);
+        policy_benchmark::PrecisionInfo precision;
+        const auto diff = policy_benchmark::compare_outputs(
+            baseline, run_seeds(options, model, seeds, &precision), scale);
         std::cout << config << ',' << seeds << ',' << std::setprecision(6) << diff.max_action_diff;
         if (!scale.empty()) std::cout << ',' << diff.max_joint_target_diff;
-        std::cout << '\n';
+        std::cout << ',' << precision.precision << '\n';
       } catch (const std::exception& error) {
         ++failures;
         std::cout << config << ",FAILED\n";

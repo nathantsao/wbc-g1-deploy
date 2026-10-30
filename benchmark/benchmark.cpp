@@ -144,6 +144,7 @@ BenchmarkResult run_benchmark(const Options& options) {
   result.cpu_utilization = result.wall_seconds > 0.0
       ? (cpu_after - cpu_before) / result.wall_seconds * 100.0 : 0.0;
   result.latency = summarize_latency(result.latency_us);
+  result.precision = runner->inference_precision();
   return result;
 }
 

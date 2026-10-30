@@ -188,7 +188,7 @@ void test_report_and_csv() {
   policy_benchmark::Options options;
   options.measured_iterations = 3;
   policy_benchmark::BenchmarkResult result;
-  result.backend = {"CPU", "test CPU", "test provider"};
+  result.backend = {"CPU", "test CPU", "test provider", {{"onnxruntime_version", "1.2.3"}}};
   result.model.inputs = {{"obs", {1, 2}, 2}};
   result.model.output_shape = {1, 29};
   result.latency_us = {3, 1, 2};
@@ -196,6 +196,7 @@ void test_report_and_csv() {
   result.wall_seconds = 1;
   result.rss_before_kib = 10;
   result.rss_after_kib = 12;
+  result.precision = {"f16", "compiled_model"};
   std::ostringstream report;
   policy_benchmark::print_report(options, result, report);
   for (const std::string expected : {
@@ -203,7 +204,9 @@ void test_report_and_csv() {
          "input.obs.shape=[1,2] elements=2\n", "output.shape=[1,29]\n",
          "latency_mean_us=2.000\n", "throughput_inferences_per_sec=3.000\n",
          "policy_deadline_misses=0/3 (0.000%)\n", "rss_delta_kib=2\n",
-         "resource_metrics_scope=host_process\n", "threads=default\n"}) {
+         "resource_metrics_scope=host_process\n", "threads=default\n",
+         "onnxruntime_version=1.2.3\n", "inference_precision=f16\n",
+         "inference_precision_source=compiled_model\n"}) {
     check(report.str().find(expected) != std::string::npos, "Missing report field: " + expected);
   }
   options.runtime = "onnx";
@@ -211,12 +214,15 @@ void test_report_and_csv() {
   options.device = "GPU";
   options.device_id = 2;
   result.backend = {"GPU.2", "CUDA device 2", "ONNX Runtime CUDA provider"};
+  result.precision = {};
   std::ostringstream gpu_report;
   policy_benchmark::print_report(options, result, gpu_report);
   check(gpu_report.str().find("device=GPU.2\n") != std::string::npos &&
         gpu_report.str().find("cuda_device_id=2\n") != std::string::npos &&
         gpu_report.str().find("ort_cpu_ep_fallback=disabled\n") != std::string::npos,
         "Accelerator report is misleading");
+  check(gpu_report.str().find("inference_precision") == std::string::npos,
+        "Report shows a precision the runtime did not report");
 
   char path[] = "/tmp/policy-benchmark-csv-XXXXXX";
   const int fd = mkstemp(path);
@@ -281,6 +287,21 @@ void test_inference(const std::string& runtime, const std::string& model_path,
   if (device != "CPU") {
     check(result.backend.device.compare(0, 3, device.substr(0, 3)) == 0,
           "Accelerator request did not execute on the requested device type");
+  }
+  if (runtime != "onnx") {
+    check(!result.precision.precision.empty() && result.precision.precision != "unknown",
+          "OpenVINO inference precision not reported");
+  }
+  // The EP's precision is OpenVINO's device default. Check that it matches what direct OpenVINO
+  // compiles this model with on the same device.
+  if (runtime == "openvino-ep") {
+    auto direct_options = options;
+    direct_options.runtime = "openvino";
+    direct_options.threads = 0;
+    const auto direct = policy_benchmark::make_backend(direct_options, model)->inference_precision();
+    check(direct.precision == result.precision.precision,
+          "OpenVINO EP precision " + result.precision.precision +
+          " differs from direct OpenVINO " + direct.precision);
   }
 }
 

@@ -40,11 +40,15 @@ benchmark/run_all.sh
 
 - The command above runs the karate policy, which is the default model. For another policy, add `--model config/policy/<name>/params/policy.onnx`, where `<name>` is `wbc` or `velocity`.
 - Each of the `REPEATS` rounds (default 3) runs every configuration once so CPU heat and frequency changes are spread across configurations. The configurations run in the same order in every round so later ones may still see slightly different conditions.
-- The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports (`.txt` for stdout, `.err` for stderr), per-call latency CSVs, `exit_codes.txt`, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`.
+- The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports (`.txt` for stdout, `.err` for stderr), per-call latency CSVs, `exit_codes.txt`, and `environment.txt` under `build/benchmark/results/<timestamp>/`.
+- `environment.txt` records the CPU governor and platform profile, the git commit and whether tracked files had uncommitted changes (`git_dirty`), the benchmark binary and whether the script rebuilt it (`bin_rebuilt`), the resolved OpenVINO EP plugin file, the GPU/NPU/Level Zero driver package versions, and the SHA-256 of each model the runs loaded.
+- Without `BIN`, the script first runs `cmake --build build/benchmark` for the benchmark target, so the binary matches the source tree that `git_commit` and `git_dirty` describe. Nothing is compiled if the build is up to date. If it compiles something, the CPU is still warm for the first runs, so build first for final results. A `BIN` that is set is used as is (`bin_rebuilt=false`) and may not match `git_commit`.
 - Only runs that exit with code 0 are summarized. `summary.csv` has one column per report field: the median for numeric fields (`policy_deadline_misses` is the miss count), the value for text fields that are equal in every run, and all values joined by ` | ` for text fields that differ. Its `runs` and `failed_runs` columns count the runs that were and were not used.
+- A median hides the slowest call, so `summary.csv` also has `latency_max_us_all_runs` (the max latency over all successful runs), `policy_deadline_misses_total` (calls over 20 ms, summed over those runs), and `measured_iterations_total`. The console table shows these as `max_us_all` and `>20ms_all`.
 - A configuration with no successful run is reported as `FAILED` without stopping the others. The script exits with an error only if every configuration fails.
 - Set `CONFIGS` to a space-separated list of `runtime:device` pairs to run a subset (for example `CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU"` together with `--threads`).
 - Override `BIN`, `EP_LIB`, `OUT`, `WARMUP`, or `ITERATIONS` through the environment. `OUT` must not already contain runs, so old results are never mixed into a new summary.
+- `EP_LIB` defaults to a fixed path, `thirdparty/onnxruntime-ep-openvino-<OVEP_VERSION>-install/Release/lib/libonnxruntime_providers_openvino_plugin.so`, where `OVEP_VERSION` defaults to 1.8.1 as in the bootstrap script. So the same plugin is used even when several versions are installed. If that file does not exist, openvino-ep runs are skipped. An `EP_LIB` that does not exist is an error, and a relative `EP_LIB` is made absolute because ONNX Runtime would resolve it from its own lib directory. `compare_outputs.sh` uses the same rule.
 - Extra arguments are passed to every run. The script rejects the options it sets for each configuration: `--runtime`, `--device`, `--warmup`, `--iterations`, `--csv`, `--provider-library`, and `--list-devices`.
 
 ## Compare outputs
@@ -56,7 +60,8 @@ benchmark/compare_outputs.sh config/policy/karate/params
 ```
 
 - The argument is the params directory of the policy to check: `config/policy/<name>/params`, where `<name>` is `karate`, `wbc`, or `velocity`.
-- It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200) and the max joint target difference in radians.
+- It prints, per configuration, the max absolute action difference over seeds 1 to `SEEDS` (default 200), the max joint target difference in radians, and the `inference_precision` the configuration ran with (see the report fields below).
+- The same CSV is saved as `output_diff.csv`, with stderr in `output_diff.err` and the settings (params directory, seeds, configurations, action scale) in `environment.txt`, under `build/benchmark/output_diff/<timestamp>/`. `environment.txt` also has the model SHA-256 and the same git, binary, plugin, and driver fields as `run_all.sh`. Without `BIN`, the script also rebuilds `policy_output_diff` first. Set `OUT` to choose the directory; it must not already hold a comparison.
 - The joint target difference is the action difference times the per-joint action scale from `config.yaml` (`action.scale`, or `actions.JointPositionAction.scale`).
 - A configuration with a NaN or infinite output is reported as `FAILED` and counts as a failed configuration. A NaN or infinite ONNX Runtime CPU baseline output or action scale stops the comparison with an error (exit code 1).
 - `--seeds` must be a plain decimal integer from 1 to 1000000.
@@ -123,6 +128,13 @@ Use `--model PATH` to benchmark a different exported policy. Reported metrics in
 
 Reports include `requested_device`, resolved `device`, `device_name`, and `execution_provider`. For CUDA and the OpenVINO EP, `device_name` is a device identifier rather than a hardware marketing name. CPU runs retain `benchmark=policy_cpu`; accelerator runs use `benchmark=policy_inference`. Existing latency keys and the CSV format (`iteration,latency_us`) are unchanged. CPU utilization and RSS are **host-process** metrics, not accelerator utilization or device memory; reports mark this with `resource_metrics_scope=host_process`. Precision remains at each backend's default. Thread counts also remain at each backend's default unless `--threads N` is given, so default runs are not thread-count-normalized comparisons.
 
+Reports also record the loaded runtime versions: `onnxruntime_version` for ONNX Runtime and the OpenVINO EP, and `openvino_version` for direct OpenVINO and the OpenVINO EP. OpenVINO EP runs also report `openvino_ep_version`, `openvino_ep_library` (the plugin file ONNX Runtime loaded), and `openvino_ep_provider_options`.
+
+Direct OpenVINO and OpenVINO EP runs report `inference_precision` (for example `f32` on CPU and `f16` on GPU and NPU) and where it comes from in `inference_precision_source`. It is queried after the measured calls, so it does not change the timing. ONNX Runtime runs do not report it.
+
+- Direct OpenVINO (`compiled_model`): the precision the compiled model uses, or `unknown` if the device plugin cannot report it.
+- OpenVINO EP (`openvino_device_default`): ONNX Runtime cannot query the model the EP compiled. OpenVINO EP 1.8 ignores the `precision` provider option and compiles with the `load_config` settings. This benchmark never sets `INFERENCE_PRECISION_HINT` in `load_config`, so the EP compiles with OpenVINO's default for the device, which the report queries from the same OpenVINO library. The `openvino-ep` inference test checks that this matches the precision direct OpenVINO compiles the model with on the same device.
+
 ## CPU threads
 
 `--threads N` (CPU only) sets the CPU inference thread count for a thread-normalized comparison. Reports show it as `threads=N`, or `threads=default` without the option.
@@ -142,6 +154,7 @@ Reports include `requested_device`, resolved `device`, `device_name`, and `execu
 - `benchmark.h/.cpp`: execution timing, host resource sampling, latency statistics, and the finite-output checks and action difference used by `output_diff.cpp`.
 - `report.h/.cpp`: console formatting and CSV export.
 - `run_all.sh`: runs every runtime/device configuration and writes a summary table.
+- `provenance.sh`: rebuilds the default binary and prints the git, plugin, and driver fields for `environment.txt`, used by both scripts.
 - `output_diff.cpp`, `compare_outputs.sh`: compare each configuration's actions with ONNX Runtime CPU.
 - `tests.cpp`: hardware-independent CLI, device resolution, statistics, input generation, reporting, and output comparison tests.
 
@@ -150,7 +163,7 @@ cmake --build build/benchmark -j
 ctest --test-dir build/benchmark --output-on-failure
 ```
 
-Tests are enabled by default; configure with `-DBUILD_TESTING=OFF` to omit them. Unit tests do not require accelerator hardware or load a policy. When the default model exists, CTest also registers synthetic CPU inference tests for ONNX Runtime and OpenVINO, checking zero warm-up, one measured iteration, repeatability, action extent, and that `--threads 1` gives the same output. If the OpenVINO EP plugin is found under `thirdparty/onnxruntime-ep-openvino-*-install/` (or set with `-DOPENVINO_EP_LIBRARY=PATH`), CTest also runs the same checks for `openvino-ep` on CPU. If you build the plugin later, run the CMake configure step again so that CTest finds it. To run the same inference checks on an available OpenVINO accelerator:
+Tests are enabled by default; configure with `-DBUILD_TESTING=OFF` to omit them. Unit tests do not require accelerator hardware or load a policy. When the default model exists, CTest also registers synthetic CPU inference tests for ONNX Runtime and OpenVINO, checking zero warm-up, one measured iteration, repeatability, action extent, and that `--threads 1` gives the same output. If the OpenVINO EP plugin is installed at `thirdparty/onnxruntime-ep-openvino-<OVEP_VERSION>-install/Release/lib/` (`OVEP_VERSION` defaults to 1.8.1, as in the bootstrap script), or set with `-DOPENVINO_EP_LIBRARY=PATH`, CTest also runs the same checks for `openvino-ep` on CPU. If you build the plugin later, run the CMake configure step again so that CTest finds it. To run the same inference checks on an available OpenVINO accelerator:
 
 ```bash
 ./build/benchmark/policy_benchmark_tests openvino \
