@@ -64,6 +64,7 @@ struct OrtRunnerOptions
     std::string openvino_ep_library;  // non-empty: run through this OpenVINO EP plugin
     std::string openvino_device = "CPU";
     std::string cache_dir;            // OpenVINO EP model cache; empty disables it
+    bool npu_turbo = false;           // NPU only: keep the NPU at maximum frequency
 };
 
 class OrtRunner : public Algorithms
@@ -210,6 +211,9 @@ private:
         if (options.threads > 0 && openvino_device_ == "CPU") {
             device_config += std::string(device_config.empty() ? "" : ",")
                 + "\"INFERENCE_NUM_THREADS\":\"" + std::to_string(options.threads) + "\"";
+        }
+        if (options.npu_turbo) {
+            device_config += std::string(device_config.empty() ? "" : ",") + "\"NPU_TURBO\":\"YES\"";
         }
         std::unordered_map<std::string, std::string> provider_options;
         if (!device_config.empty()) {

@@ -141,6 +141,11 @@ private:
 std::unique_ptr<isaaclab::Algorithms> create_runner(
   const std::filesystem::path& model_path, const InferenceConfig& config, std::string& description)
 {
+  if (config.npu_turbo && config.device != "NPU") {
+    throw std::runtime_error("inference.npu_turbo needs device NPU; " + config.device
+      + " does not support it");
+  }
+
   if (config.runtime == "onnxruntime") {
     if (config.device != "CPU") {
       throw std::runtime_error("runtime onnxruntime supports only device CPU; use openvino or "
@@ -161,6 +166,7 @@ std::unique_ptr<isaaclab::Algorithms> create_runner(
     options.device = config.device;
     options.threads = config.threads;
     options.cache_dir = config.cache_dir;
+    options.npu_turbo = config.npu_turbo;
     auto runner = std::make_unique<isaaclab::OpenVinoRunner>(model_path.string(), options);
     description = "OpenVINO " + runner->device() + " (" + runner->device_full_name() + ", "
       + runner->inference_precision() + ")";
@@ -184,6 +190,7 @@ std::unique_ptr<isaaclab::Algorithms> create_runner(
     options.openvino_ep_library = config.openvino_ep_library;
     options.openvino_device = config.device;
     options.cache_dir = config.cache_dir;
+    options.npu_turbo = config.npu_turbo;
     auto runner = std::make_unique<isaaclab::OrtRunner>(model_path.string(), options);
     description = "ONNX Runtime + OpenVINO EP " + runner->openvino_device();
     return runner;
@@ -235,6 +242,10 @@ InferenceConfig load_inference_config(const YAML::Node& root, const YAML::Node& 
     config.openvino_ep_library = resolve_optional_path(node->as<std::string>());
   }
 
+  if (const auto node = lookup(state_block, root_block, "npu_turbo")) {
+    config.npu_turbo = node->as<bool>();
+  }
+
   if (const auto node = lookup(state_block, root_block, "latency_log_interval")) {
     config.latency_log_interval = node->as<double>();
   }
@@ -267,9 +278,10 @@ std::unique_ptr<isaaclab::Algorithms> make_policy_runner(
   const auto load_ms = std::chrono::duration<double, std::milli>(
     std::chrono::steady_clock::now() - start).count();
 
-  spdlog::info("{}: policy inference on {} (threads {}, cache {}), loaded in {:.0f} ms",
+  spdlog::info("{}: policy inference on {} (threads {}, cache {}{}), loaded in {:.0f} ms",
     label, description, config.threads > 0 ? std::to_string(config.threads) : "default",
-    uses_openvino && !config.cache_dir.empty() ? config.cache_dir : "off", load_ms);
+    uses_openvino && !config.cache_dir.empty() ? config.cache_dir : "off",
+    config.npu_turbo ? ", turbo on" : "", load_ms);
 
   if (config.latency_log_interval > 0.0) {
     runner = std::make_unique<LatencyLoggingRunner>(

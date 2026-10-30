@@ -173,6 +173,7 @@ inference:
 | `cache_dir` | `~/.cache/wbc_g1_deploy/openvino` | Compiled-model cache for `openvino` and `openvino-ep`. `""` turns it off. |
 | `openvino_ep_library` | plugin under `thirdparty/` | OpenVINO EP plugin for `openvino-ep`. A relative path starts at the repo root. |
 | `latency_log_interval` | `0` | Seconds between inference latency log lines. `0` turns the log off. |
+| `npu_turbo` | `false` | `true` keeps the NPU at its maximum frequency: lower latency, higher power. NPU only; other devices stop with an error. |
 
 Each state loads its model when the controller starts, never in the control loop, and logs the result:
 
@@ -236,6 +237,21 @@ Findings:
 - NPU p50 is 258-280 µs and the slowest call is 1.6 ms. `npu_busy_time_us` grows by about 640 ms per NPU run and does not change in the other runs, so the policy really runs on the NPU.
 - Model load takes at most 470 ms per state in these runs.
 - Latency here is higher than in [benchmark/README.md](benchmark/README.md), where calls run back to back. In the controller they run every 20 ms.
+
+#### NPU turbo
+
+Same machine and test sequence, one run each, on 2026-10-30. All runs stayed standing.
+
+| Runtime | `npu_turbo` | Wbc_Tracking p50 / p99 / max (µs) | Velocity p50 / p99 / max (µs) | `npu_busy_time_us` growth (ms) |
+|---------|-------------|-----------------------------------|-------------------------------|--------------------------------|
+| `openvino` | `false` | 263 / 751 / 1,316 | 277 / 768 / 1,265 | 645 |
+| `openvino` | `true` | 111 / 654 / 1,624 | 100 / 335 / 2,454 | 206 |
+| `openvino-ep` | `false` | 274 / 934 / 2,039 | 285 / 990 / 3,438 | 662 |
+| `openvino-ep` | `true` | 132 / 866 / 1,487 | 136 / 708 / 832 | 217 |
+
+- Turbo cuts p50 by about half and the NPU busy time to about one third.
+- The slowest calls do not improve. They stay between 0.8 and 3.5 ms.
+- Power was not measured, because the RAPL energy counters need root.
 
 ## Layout
 

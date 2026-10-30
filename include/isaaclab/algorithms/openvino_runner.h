@@ -3,6 +3,7 @@
 #include "isaaclab/algorithms/algorithms.h"
 
 #include <openvino/openvino.hpp>
+#include <openvino/runtime/intel_npu/properties.hpp>
 
 #include <cstring>
 #include <map>
@@ -19,6 +20,7 @@ struct OpenVinoRunnerOptions
     std::string device = "CPU";  // CPU, GPU, GPU.N or NPU
     int threads = 0;             // CPU inference threads; 0 keeps the OpenVINO default
     std::string cache_dir;       // compiled-model cache; empty disables it
+    bool npu_turbo = false;      // NPU only: keep the NPU at maximum frequency
 };
 
 // Runs the policy directly on OpenVINO Runtime. The model is compiled and run once in the
@@ -58,6 +60,9 @@ public:
         }
         if (options.threads > 0 && device_ == "CPU") {
             config.emplace(ov::inference_num_threads(options.threads));
+        }
+        if (options.npu_turbo) {
+            config.emplace(ov::intel_npu::turbo(true));
         }
         compiled_model_ = core_.compile_model(model, device_, config);
         request_ = compiled_model_.create_infer_request();

@@ -16,6 +16,7 @@ struct InferenceConfig {
   int threads = 0;                      ///< CPU inference threads; 0 = runtime default
   std::string cache_dir;                ///< OpenVINO compiled-model cache; empty = disabled
   std::string openvino_ep_library;      ///< OpenVINO EP plugin (.so) for openvino-ep
+  bool npu_turbo = false;               ///< NPU only: keep the NPU at maximum frequency
   double latency_log_interval = 0.0;    ///< Seconds between latency log lines; 0 = off
 };
 
