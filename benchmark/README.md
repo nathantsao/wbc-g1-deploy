@@ -40,8 +40,9 @@ benchmark/run_all.sh
 
 - The command above runs the karate policy, which is the default model. For another policy, add `--model config/policy/<name>/params/policy.onnx`, where `<name>` is `wbc` or `velocity`.
 - Each of the `REPEATS` rounds (default 3) runs every configuration once, so CPU heat and frequency changes affect all configurations about equally. The configurations run in the same order in every round.
-- The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports, per-call latency CSVs, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`.
-- A failed configuration is reported as `FAILED` without stopping the others. The script exits with an error only if every configuration fails.
+- The script prints a Markdown table of per-configuration medians and writes `summary.csv`, the raw per-run reports (`.txt` for stdout, `.err` for stderr), per-call latency CSVs, `exit_codes.txt`, and `environment.txt` (CPU governor and platform profile) under `build/benchmark/results/<timestamp>/`.
+- Only runs that exit with code 0 are summarized. `summary.csv` has one column per report field: the median for numeric fields (`policy_deadline_misses` is the miss count), the value for text fields that are equal in every run, and all values joined by ` | ` for text fields that differ. Its `runs` and `failed_runs` columns count the runs that were and were not used.
+- A configuration with no successful run is reported as `FAILED` without stopping the others. The script exits with an error only if every configuration fails.
 - Set `CONFIGS` to a space-separated list of `runtime:device` pairs to run a subset (for example `CONFIGS="onnx:CPU openvino:CPU openvino-ep:CPU"` together with `--threads`).
 - Override `BIN`, `EP_LIB`, `OUT`, `WARMUP`, or `ITERATIONS` through the environment. `OUT` must not already contain runs, so old results are never mixed into a new summary.
 - Extra arguments are passed to every run. The script rejects the options it sets for each configuration: `--runtime`, `--device`, `--warmup`, `--iterations`, `--csv`, `--provider-library`, and `--list-devices`.
