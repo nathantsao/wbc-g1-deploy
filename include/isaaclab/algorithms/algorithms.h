@@ -27,14 +27,24 @@ protected:
     std::mutex act_mtx_;
 };
 
+struct OrtRunnerOptions
+{
+    int threads = 0;  // intra-op threads; 0 keeps the ONNX Runtime default
+};
+
 class OrtRunner : public Algorithms
 {
 public:
-    OrtRunner(std::string model_path)
+    OrtRunner(std::string model_path) : OrtRunner(model_path, OrtRunnerOptions{}) {}
+
+    OrtRunner(const std::string& model_path, const OrtRunnerOptions& options)
     {
         // Init Model
         env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "onnx_model");
         session_options.SetGraphOptimizationLevel(ORT_ENABLE_EXTENDED);
+        if (options.threads > 0) {
+            session_options.SetIntraOpNumThreads(options.threads);
+        }
 
         session = std::make_unique<Ort::Session>(env, model_path.c_str(), session_options);
 

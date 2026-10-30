@@ -1,4 +1,5 @@
 #include "FSM/State_RLBase.h"
+#include "policy_inference.h"
 #include "unitree_articulation.h"
 #include "isaaclab/envs/mdp/observations/observations.h"
 #include "isaaclab/envs/mdp/actions/joint_actions.h"
@@ -99,7 +100,10 @@ State_RLBase::State_RLBase(int state_mode, std::string state_string)
         YAML::LoadFile(policy_dir / "params" / "config.yaml"),
         std::make_shared<unitree::BaseArticulation<LowState_t::SharedPtr>>(FSMState::lowstate)
     );
-    env->alg = std::make_unique<isaaclab::OrtRunner>(policy_dir / "params" / "policy.onnx");
+    env->alg = wbc_deploy::make_policy_runner(
+        policy_dir / "params" / "policy.onnx",
+        wbc_deploy::load_inference_config(param::config, cfg),
+        state_string);
 
     this->registered_checks.emplace_back(
         std::make_pair(

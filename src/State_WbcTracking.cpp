@@ -4,6 +4,7 @@
 #include "joystick_expr.h"
 #include "motion_npz.h"
 #include "pd_torque_clip.h"
+#include "policy_inference.h"
 #include "unitree_articulation.h"
 #include "wbc_entry_mode.h"
 #include "wbc_mdp_registrations.h"
@@ -72,8 +73,10 @@ State_WbcTracking::State_WbcTracking(
     FSMState::lowstate);
 
   env = std::make_unique<isaaclab::ManagerBasedRLEnv>(deploy, articulation);
-  env->alg = std::make_unique<isaaclab::OrtRunner>(
-    wbc_deploy::resolve_onnx_path(policy_dir).string());
+  env->alg = wbc_deploy::make_policy_runner(
+    wbc_deploy::resolve_onnx_path(policy_dir),
+    wbc_deploy::load_inference_config(root, cfg),
+    state_string);
 
   const std::string clip_next_expr = cfg["clip_next"].as<std::string>("RT + right.on_pressed");
   const std::string clip_prev_expr = cfg["clip_prev"].as<std::string>("RT + left.on_pressed");

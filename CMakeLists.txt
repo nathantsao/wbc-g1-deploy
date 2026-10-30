@@ -61,6 +61,7 @@ set(WBC_LIB_SRC
   ${REPO_ROOT}/src/motion_reference_obs.cpp
   ${REPO_ROOT}/src/wbc_tracking_params.cpp
   ${REPO_ROOT}/src/pd_torque_clip.cpp
+  ${REPO_ROOT}/src/policy_inference.cpp
   ${REPO_ROOT}/src/State_RLBase.cpp
 )
 

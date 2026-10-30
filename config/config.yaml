@@ -3,6 +3,12 @@ policy_dir: config/policy/karate
 clips_dir: config/karate_clips
 clips_manifest: manifest.yaml
 
+# Policy inference runtime and device.
+# An FSM state may override any key with its own `inference:` block.
+inference:
+  runtime: onnxruntime
+  device: CPU
+
 FSM:
   _:
     Passive:
