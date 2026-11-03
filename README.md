@@ -214,9 +214,9 @@ Test sequence, with `latency_log_interval: 5`:
 1. Press `2` (FixStand). The simulator starts with no motor torque, so the robot is already on the floor.
 2. Press Backspace in the MuJoCo window to stand the robot up, then press `3` (WBC tracking) right away.
 3. Press `a` to play `bow`. Then press Right and `a` to play `karate_move_1`. Each clip plays to its end.
-4. Press `6` (Velocity). Hold `w` 5 s, `q` 3 s, `s` 3 s, `d` 3 s, then wait 3 s.
+4. Press `6` (Velocity). After 1 s, hold `w` 5 s, `q` 3 s, `s` 3 s, `d` 3 s, then wait 3 s.
 
-The robot counts as fallen if the IMU height drops below 0.45 m or roll or pitch goes above 0.8 rad. The lowest height was 0.54 m, during `karate_move_1`, and the largest roll or pitch was 0.27 rad. Each run has about 1,430 Wbc_Tracking calls and 750 Velocity calls. p50 is the median and p99 the worst of the 5 s window values. max also includes the shorter window logged when a state exits. Controller CPU is the controller's CPU time from step 1 to the end, divided by the elapsed time.
+The robot counts as fallen if the IMU height drops below 0.45 m or roll or pitch goes above 0.8 rad. The lowest height was 0.54 m, during `karate_move_1`, and the largest roll or pitch was 0.27 rad. Each state logs its latency every 5 s and once more when it exits. Each run logs about 1,430 Wbc_Tracking calls and 750 Velocity calls. The run ends in Velocity, so the last 3 s of Velocity, the final wait, are not logged. p50 is the median and p99 the worst of the logged window values, including the shorter Wbc_Tracking window logged on exit. max is the slowest call. Controller CPU is the controller's CPU time from step 1 to the end, divided by the elapsed time.
 
 | Runtime | Device | `threads` | Wbc_Tracking p50 / p99 / max (µs) | Velocity p50 / p99 / max (µs) | Controller CPU (cores) |
 |---------|--------|-----------|-----------------------------------|-------------------------------|------------------------|
@@ -252,7 +252,7 @@ Same machine and test sequence, one run each, on 2026-11-03. All runs stayed sta
 | `openvino-ep` | `true` | 133 / 275 / 1,206 | 115 / 176 / 415 | 166 |
 
 - Turbo cuts p50 by about half and the NPU busy time to about one third.
-- p99 and the slowest calls do not improve consistently. The slowest calls stay between 0.4 and 1.6 ms.
+- p99 and the slowest calls do not improve consistently. The slowest calls stay between 0.4 and 1.6 ms. The `openvino` Wbc_Tracking p99 with turbo, 828 µs, comes from the shorter window logged on exit. Its 5 s windows stay at or below 255 µs.
 - Power was not measured, because the RAPL energy counters need root.
 
 ## Layout
