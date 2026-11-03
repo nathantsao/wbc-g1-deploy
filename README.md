@@ -28,6 +28,8 @@ See [wbc-mjlab docs](https://wbc-mjlab.github.io/wbc-mjlab/) for datasets, motio
 
 **Standing:** Passive → FixStand (L2 + D-pad Up) → WBC tracking (R2 + A)
 
+FixStand holds a pose but does not balance, so start WBC tracking or Velocity while the robot still stands. If the IMU is tilted more than 30° (the robot has fallen), FixStand stays put and logs an error; use the from-floor sequence instead.
+
 **From floor:** Passive → FloorReady (L2 + D-pad Down) → WBC + getup (R2 + Y)
 
 **From Velocity:** Velocity (R2 + A) → WbcReady (select a clip with RT + D-pad left/right) → WBC tracking (R2 + Y, starts the selected clip)
