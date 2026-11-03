@@ -7,6 +7,8 @@
 #include "isaaclab/envs/mdp/actions/joint_actions.h"
 #include "isaaclab/envs/mdp/terminations.h"
 
+#include <mutex>
+
 class State_RLBase : public FSMState
 {
 public:
@@ -37,7 +39,13 @@ public:
 
             while (policy_thread_running)
             {
-                env->step();
+                auto obs = env->compute_step_observations();
+                const auto action = env->alg->act(std::move(obs));
+                {
+                    // run() copies the joint targets every 1 ms.
+                    std::lock_guard<std::mutex> lock(action_mtx);
+                    env->apply_step_action(action);
+                }
 
                 // Sleep
                 std::this_thread::sleep_until(sleepTill);
@@ -62,6 +70,7 @@ private:
 
     std::thread policy_thread;
     bool policy_thread_running = false;
+    std::mutex action_mtx;  // guards the joint targets shared by the policy thread and run()
 };
 
 REGISTER_FSM(State_RLBase)
