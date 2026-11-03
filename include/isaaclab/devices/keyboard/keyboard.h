@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <mutex>
 #include <termios.h>
 #include <unistd.h>
 #include <thread>
@@ -40,10 +41,11 @@ public:
 
   void update()
   {
-    if(_key != _last_key)
+    const std::string current = key();
+    if(current != _last_key)
     {
-      on_pressed = _key != "";
-      on_released = _key == "";
+      on_pressed = current != "";
+      on_released = current == "";
     }
     else
     {
@@ -51,7 +53,7 @@ public:
       on_released = false;
     }
     
-    _last_key = _key;
+    _last_key = current;
   }
 
   /**
@@ -59,7 +61,12 @@ public:
    * 
    * @return std::string 
    */
-  std::string key() const { return _key; };
+  std::string key() const
+  {
+    // The read thread writes the key while the FSM and policy threads read it.
+    std::lock_guard<std::mutex> lock(_key_mtx);
+    return _key;
+  }
 
   /**
    * @brief Get the String object from keyboard 
@@ -113,7 +120,7 @@ public:
         // Parser the key value
         if(_c != '\033') {
           // This is a normal key
-          _key = _c;
+          _setKey(std::string(1, _c));
         }else{
           // This is a special key
           int m = read(fileno(stdin), &_c, 1);
@@ -122,19 +129,25 @@ public:
             m = read(fileno(stdin), &_c, 1);
             switch (_c)
             {
-            case 'A': _key = "up";    break;
-            case 'B': _key = "down";  break;
-            case 'C': _key = "right"; break;
-            case 'D': _key = "left";  break;
-            default:  _key = "";      break;
+            case 'A': _setKey("up");    break;
+            case 'B': _setKey("down");  break;
+            case 'C': _setKey("right"); break;
+            case 'D': _setKey("left");  break;
+            default:  _setKey("");      break;
             }
           }
         }
       }else{
-        _key = "";
+        _setKey("");
       }
       // std::cout << "key: "<< key() << std::endl;
     }
+  }
+
+  void _setKey(std::string key)
+  {
+    std::lock_guard<std::mutex> lock(_key_mtx);
+    _key = std::move(key);
   }
 
   /**
@@ -157,6 +170,7 @@ public:
 
   fd_set _fd_set;
   char _c = '\0';
+  mutable std::mutex _key_mtx;  // guards _key
   std::string _key, _last_key;
   
   termios _oldSettings, _newSettings;

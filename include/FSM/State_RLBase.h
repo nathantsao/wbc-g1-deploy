@@ -7,6 +7,7 @@
 #include "isaaclab/envs/mdp/actions/joint_actions.h"
 #include "isaaclab/envs/mdp/terminations.h"
 
+#include <atomic>
 #include <mutex>
 
 class State_RLBase : public FSMState
@@ -71,7 +72,7 @@ private:
     std::unique_ptr<isaaclab::ManagerBasedRLEnv> env;
 
     std::thread policy_thread;
-    bool policy_thread_running = false;
+    std::atomic<bool> policy_thread_running{false};  // exit() clears it while the policy thread reads it
     std::mutex action_mtx;  // guards the joint targets shared by the policy thread and run()
     bool action_ready = false;  // an action was applied since enter(); guarded by action_mtx
 };

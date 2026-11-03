@@ -44,6 +44,8 @@ REGISTER_OBSERVATION(velocity_commands)
         if (!joystick) {
             throw std::runtime_error("velocity_commands requires a joystick in joystick mode.");
         }
+        // The FSM thread updates the joystick under this lock every 1 ms; this runs in the policy thread.
+        std::lock_guard<std::mutex> lock(FSMState::lowstate->mutex_);
         // Unitree stick right is negative body-y / negative yaw.
         axes = {joystick->ly(), -joystick->lx(), -joystick->rx()};
     }
