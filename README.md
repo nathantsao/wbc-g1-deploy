@@ -205,54 +205,54 @@ cmake --build build -j
 
 ### Simulator results
 
-Every runtime and device kept the robot standing. Every call finished within the 20 ms policy period.
+Every runtime and device kept the robot standing, and no run triggered the hardware safety fault. Every call finished within the 20 ms policy period.
 
-Test machine: Intel Core Ultra X7 358H, Arc B390 iGPU (driver 26.35.39758.17), NPU driver 1.38.0, `powersave` governor. Ubuntu 26.04, ONNX Runtime 1.30.0, OpenVINO 2026.4.1, OpenVINO EP 1.8.1. Run on 2026-10-30 at commit 2dbb89b.
+Test machine: Intel Core Ultra X7 358H, Arc B390 iGPU (driver 26.35.39758.17), NPU driver 1.38.0, `powersave` governor. Ubuntu 26.04, ONNX Runtime 1.30.0, OpenVINO 2026.4.1, OpenVINO EP 1.8.1. Run on 2026-11-03 at commit 87c911c. The simulator ran headless, with the same scene and DDS bridge as `unitree_mujoco`; a script sent the keys and the Backspace reset.
 
 Test sequence, with `latency_log_interval: 5`:
 
 1. Press `2` (FixStand). The simulator starts with no motor torque, so the robot is already on the floor.
 2. Press Backspace in the MuJoCo window to stand the robot up, then press `3` (WBC tracking) right away.
-3. Press `a` to play `bow`. Then press Right and `a` to play `karate_move_1`.
+3. Press `a` to play `bow`. Then press Right and `a` to play `karate_move_1`. Each clip plays to its end.
 4. Press `6` (Velocity). Hold `w` 5 s, `q` 3 s, `s` 3 s, `d` 3 s, then wait 3 s.
 
-The robot counts as fallen if the IMU height drops below 0.45 m or roll or pitch goes above 0.8 rad. The lowest height was 0.52 m, during `karate_move_1`. Each run has about 1,760 Wbc_Tracking calls and 1,000 Velocity calls. p50 is the median and p99 the worst of the 5 s window values.
+The robot counts as fallen if the IMU height drops below 0.45 m or roll or pitch goes above 0.8 rad. The lowest height was 0.54 m, during `karate_move_1`, and the largest roll or pitch was 0.27 rad. Each run has about 1,430 Wbc_Tracking calls and 750 Velocity calls. p50 is the median and p99 the worst of the 5 s window values. max also includes the shorter window logged when a state exits. Controller CPU is the controller's CPU time from step 1 to the end, divided by the elapsed time.
 
 | Runtime | Device | `threads` | Wbc_Tracking p50 / p99 / max (µs) | Velocity p50 / p99 / max (µs) | Controller CPU (cores) |
 |---------|--------|-----------|-----------------------------------|-------------------------------|------------------------|
-| `onnxruntime` | CPU | default | 31 / 266 / 610 | 22 / 164 / 252 | 5.49 |
-| `onnxruntime` | CPU | 2 | 58 / 320 / 613 | 20 / 127 / 211 | 1.04 |
-| `onnxruntime` | CPU | 1 | 192 / 335 / 622 | 71 / 161 / 412 | 0.17 |
-| `openvino` | CPU | default | 192 / 608 / 858 | 117 / 460 / 646 | 0.17 |
-| `openvino` | CPU | 1 | 245 / 937 / 4,120 | 65 / 249 / 534 | 0.17 |
-| `openvino` | GPU | default | 359 / 2,220 / 2,310 | 364 / 9,731 / 12,125 | 0.18 |
-| `openvino` | NPU | default | 258 / 655 / 1,252 | 280 / 731 / 868 | 0.16 |
-| `openvino-ep` | CPU | default | 212 / 621 / 3,798 | 117 / 254 / 548 | 0.18 |
-| `openvino-ep` | GPU | default | 427 / 3,539 / 8,538 | 405 / 2,000 / 2,155 | 0.19 |
-| `openvino-ep` | NPU | default | 268 / 684 / 1,598 | 278 / 588 / 856 | 0.17 |
+| `onnxruntime` | CPU | default | 28 / 225 / 620 | 17 / 122 / 159 | 5.56 |
+| `onnxruntime` | CPU | 2 | 49 / 281 / 638 | 15 / 122 / 159 | 1.09 |
+| `onnxruntime` | CPU | 1 | 177 / 345 / 699 | 66 / 163 / 349 | 0.19 |
+| `openvino` | CPU | default | 197 / 329 / 553 | 90 / 179 / 225 | 0.16 |
+| `openvino` | CPU | 1 | 213 / 383 / 515 | 57 / 188 / 217 | 0.20 |
+| `openvino` | GPU | default | 340 / 522 / 599 | 399 / 550 / 720 | 0.17 |
+| `openvino` | NPU | default | 253 / 388 / 2,103 | 242 / 424 / 443 | 0.17 |
+| `openvino-ep` | CPU | default | 208 / 477 / 1,788 | 107 / 198 / 601 | 0.17 |
+| `openvino-ep` | GPU | default | 362 / 624 / 773 | 362 / 556 / 712 | 0.23 |
+| `openvino-ep` | NPU | default | 260 / 556 / 1,324 | 273 / 330 / 567 | 0.17 |
 
 Findings:
 
-- ONNX Runtime CPU with default threads is the fastest, but the controller then uses about 5.5 cores. With `threads: 2` it uses 1 core and Velocity is just as fast. Consider `threads: 2` on the robot.
-- All other runs use about 0.17 core.
-- GPU is the slowest and has the largest spikes, up to 12.1 ms.
-- NPU p50 is 258-280 µs and the slowest call is 1.6 ms. `npu_busy_time_us` grows by about 640 ms per NPU run and does not change in the other runs, so the policy really runs on the NPU.
-- Model load takes at most 470 ms per state in these runs.
+- ONNX Runtime CPU with default threads is the fastest, but the controller then uses about 5.6 cores. With `threads: 2` it uses 1.1 cores and Velocity is just as fast. Consider `threads: 2` on the robot.
+- All other runs use 0.16-0.23 core.
+- GPU has the highest p50, 340-399 µs. Its slowest call is 0.8 ms, down from 12.1 ms in the 2026-10-30 run.
+- NPU p50 is 242-273 µs and the slowest call is 2.1 ms. `npu_busy_time_us` grows by about 500 ms per NPU run and does not change in the other runs, so the policy really runs on the NPU.
+- Model load takes at most 325 ms per state in these runs.
 - Latency here is higher than in [benchmark/README.md](benchmark/README.md), where calls run back to back. In the controller they run every 20 ms.
 
 #### NPU turbo
 
-Same machine and test sequence, one run each, on 2026-10-30. All runs stayed standing.
+Same machine and test sequence, one run each, on 2026-11-03. All runs stayed standing.
 
 | Runtime | `npu_turbo` | Wbc_Tracking p50 / p99 / max (µs) | Velocity p50 / p99 / max (µs) | `npu_busy_time_us` growth (ms) |
 |---------|-------------|-----------------------------------|-------------------------------|--------------------------------|
-| `openvino` | `false` | 263 / 751 / 1,316 | 277 / 768 / 1,265 | 645 |
-| `openvino` | `true` | 111 / 654 / 1,624 | 100 / 335 / 2,454 | 206 |
-| `openvino-ep` | `false` | 274 / 934 / 2,039 | 285 / 990 / 3,438 | 662 |
-| `openvino-ep` | `true` | 132 / 866 / 1,487 | 136 / 708 / 832 | 217 |
+| `openvino` | `false` | 255 / 349 / 1,236 | 283 / 358 / 757 | 494 |
+| `openvino` | `true` | 107 / 828 / 1,137 | 102 / 174 / 1,642 | 159 |
+| `openvino-ep` | `false` | 257 / 570 / 1,644 | 279 / 385 / 1,267 | 500 |
+| `openvino-ep` | `true` | 133 / 275 / 1,206 | 115 / 176 / 415 | 166 |
 
 - Turbo cuts p50 by about half and the NPU busy time to about one third.
-- The slowest calls do not improve. They stay between 0.8 and 3.5 ms.
+- p99 and the slowest calls do not improve consistently. The slowest calls stay between 0.4 and 1.6 ms.
 - Power was not measured, because the RAPL energy counters need root.
 
 ## Layout
