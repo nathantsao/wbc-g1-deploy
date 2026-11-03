@@ -26,6 +26,7 @@ public:
         if (policy_thread.joinable()) {
             policy_thread.join();
         }
+        env->alg->on_stop();
     }
 
     static std::shared_ptr<WbcMotionLoader> motion;

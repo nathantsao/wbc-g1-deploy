@@ -21,6 +21,8 @@ class Algorithms
 public:
     virtual ~Algorithms() = default;
     virtual std::vector<float> act(std::unordered_map<std::string, std::vector<float>> obs) = 0;
+    // Called when the FSM state stops calling act(), on state exit.
+    virtual void on_stop() {}
 
     std::vector<float> get_action()
     {

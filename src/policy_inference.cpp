@@ -92,7 +92,8 @@ std::string resolve_optional_path(const std::string& path)
   return path.empty() ? path : param::resolve_path_under_proj(expand_home(path)).string();
 }
 
-// Logs inference latency statistics every `interval` seconds of policy steps.
+// Logs inference latency statistics every `interval` seconds of policy steps, and once more
+// when the state stops.
 class LatencyLoggingRunner final : public isaaclab::Algorithms {
 public:
   LatencyLoggingRunner(
@@ -121,6 +122,14 @@ public:
       report();
     }
     return result;
+  }
+
+  // Report the unfinished window, so the next run of the state starts a new one.
+  void on_stop() override
+  {
+    if (!samples_us_.empty()) {
+      report();
+    }
   }
 
 private:
