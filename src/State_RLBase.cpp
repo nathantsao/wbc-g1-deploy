@@ -118,6 +118,9 @@ void State_RLBase::run()
     std::vector<float> action;
     {
         std::lock_guard<std::mutex> lock(action_mtx);
+        if (!action_ready) {
+            return;  // keep the previous state's targets until this run's first action
+        }
         action = env->action_manager->processed_actions();
     }
     for(int i(0); i < env->robot->data.joint_ids_map.size(); i++) {

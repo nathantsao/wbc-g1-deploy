@@ -306,9 +306,11 @@ void State_WbcTracking::enter()
     was_playback_finished_ = false;
   }
   env->reset();
+  action_ready_ = false;
 
   if (ready_mode_) {
     env->step();
+    action_ready_ = true;
   }
   
   policy_thread_running = true;
@@ -340,6 +342,7 @@ void State_WbcTracking::enter()
         // A clip switch in run() may reset the env during inference. Drop the old clip's action.
         if (env->reset_count == reset_count) {
           env->apply_step_action(action);
+          action_ready_ = true;
         }
       }
       std::this_thread::sleep_until(sleep_till);
@@ -352,6 +355,9 @@ void State_WbcTracking::run()
 {
   std::lock_guard<std::mutex> lock(tracking_mtx_);
   handleClipSwitch();
+  if (!action_ready_) {
+    return;  // keep the previous state's targets until this run's first action
+  }
 
   const auto action = env->action_manager->processed_actions();
   std::vector<float> q_cmd(action.begin(), action.end());

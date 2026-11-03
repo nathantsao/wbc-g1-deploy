@@ -62,6 +62,7 @@ private:
     std::function<bool(const unitree::common::UnitreeJoystick&)> clip_getup_fn_;
     std::function<bool(const unitree::common::UnitreeJoystick&)> clip_liedown_fn_;
     wbc_deploy::PdTorqueClipConfig pd_torque_clip_;
+    bool action_ready_ = false;  // an action was applied since enter(); guarded by tracking_mtx_
     std::mutex tracking_mtx_;
 };
 

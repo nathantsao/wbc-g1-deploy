@@ -26,6 +26,7 @@ public:
         }
 
         env->robot->update();
+        action_ready = false;
         // Start policy thread
         policy_thread_running = true;
         policy_thread = std::thread([this]{
@@ -45,6 +46,7 @@ public:
                     // run() copies the joint targets every 1 ms.
                     std::lock_guard<std::mutex> lock(action_mtx);
                     env->apply_step_action(action);
+                    action_ready = true;
                 }
 
                 // Sleep
@@ -71,6 +73,7 @@ private:
     std::thread policy_thread;
     bool policy_thread_running = false;
     std::mutex action_mtx;  // guards the joint targets shared by the policy thread and run()
+    bool action_ready = false;  // an action was applied since enter(); guarded by action_mtx
 };
 
 REGISTER_FSM(State_RLBase)
