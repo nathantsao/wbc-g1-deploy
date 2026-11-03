@@ -74,9 +74,22 @@ std::string default_cache_dir()
   return "";
 }
 
+// "~" and "~/..." start at the home directory, as in the README default for cache_dir.
+std::string expand_home(const std::string& path)
+{
+  if (path != "~" && path.rfind("~/", 0) != 0) {
+    return path;
+  }
+  const char* home = std::getenv("HOME");
+  if (!home || !*home) {
+    throw std::runtime_error("cannot expand " + path + " because HOME is not set");
+  }
+  return home + path.substr(1);
+}
+
 std::string resolve_optional_path(const std::string& path)
 {
-  return path.empty() ? path : param::resolve_path_under_proj(path).string();
+  return path.empty() ? path : param::resolve_path_under_proj(expand_home(path)).string();
 }
 
 // Logs inference latency statistics every `interval` seconds of policy steps.

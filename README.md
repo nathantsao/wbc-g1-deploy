@@ -170,8 +170,8 @@ inference:
 | `runtime` | `onnxruntime` | `onnxruntime`: ONNX Runtime CPU. `openvino`: OpenVINO Runtime. `openvino-ep`: ONNX Runtime with the OpenVINO Execution Provider (EP) plugin. |
 | `device` | `CPU` | `CPU`, `GPU`, or `NPU`. `onnxruntime` supports `CPU` only. |
 | `threads` | `0` | CPU inference threads. `0` keeps the runtime default. |
-| `cache_dir` | `~/.cache/wbc_g1_deploy/openvino` | Compiled-model cache for `openvino` and `openvino-ep`. `""` turns it off. |
-| `openvino_ep_library` | plugin under `thirdparty/` | OpenVINO EP plugin for `openvino-ep`. A relative path starts at the repo root. |
+| `cache_dir` | `~/.cache/wbc_g1_deploy/openvino` | Compiled-model cache for `openvino` and `openvino-ep`. `~` is the home directory, and a relative path starts at the repo root. `""` turns it off. |
+| `openvino_ep_library` | plugin under `thirdparty/` | OpenVINO EP plugin for `openvino-ep`. `~` is the home directory, and a relative path starts at the repo root. |
 | `latency_log_interval` | `0` | Seconds between inference latency log lines. `0` turns the log off. |
 | `npu_turbo` | `false` | `true` keeps the NPU at its maximum frequency: lower latency, higher power. NPU only; other devices stop with an error. |
 
