@@ -51,6 +51,7 @@ public:
     {
         global_phase = 0;
         episode_length = 0;
+        reset_count += 1;
         robot->update();
         action_manager->reset();
         observation_manager->reset();
@@ -58,10 +59,21 @@ public:
 
     void step()
     {
+        auto obs = compute_step_observations();
+        auto action = alg->act(obs);
+        apply_step_action(action);
+    }
+
+    // step() in two parts, so a caller can run alg->act() without holding its own lock.
+    std::unordered_map<std::string, std::vector<float>> compute_step_observations()
+    {
         episode_length += 1;
         robot->update();
-        auto obs = observation_manager->compute();
-        auto action = alg->act(obs);
+        return observation_manager->compute();
+    }
+
+    void apply_step_action(const std::vector<float>& action)
+    {
         action_manager->process_action(action);
     }
 
@@ -74,6 +86,7 @@ public:
     std::shared_ptr<Articulation> robot;
     std::unique_ptr<Algorithms> alg;
     long episode_length = 0;
+    long reset_count = 0;  // incremented by reset()
     float global_phase = 0.0f;
 };
 

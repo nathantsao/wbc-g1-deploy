@@ -324,11 +324,23 @@ void State_WbcTracking::enter()
     }
 
     while (policy_thread_running) {
+      std::unordered_map<std::string, std::vector<float>> obs;
+      long reset_count = 0;
       {
         std::lock_guard<std::mutex> lock(tracking_mtx_);
         env->robot->update();
         motion->update(currentPlaybackTime());
-        env->step();
+        obs = env->compute_step_observations();
+        reset_count = env->reset_count;
+      }
+      // Run the policy without the lock: run() takes it every 1 ms before it sends lowcmd.
+      const auto action = env->alg->act(std::move(obs));
+      {
+        std::lock_guard<std::mutex> lock(tracking_mtx_);
+        // A clip switch in run() may reset the env during inference. Drop the old clip's action.
+        if (env->reset_count == reset_count) {
+          env->apply_step_action(action);
+        }
       }
       std::this_thread::sleep_until(sleep_till);
       sleep_till += dt;
